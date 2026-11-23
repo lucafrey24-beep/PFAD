@@ -3,7 +3,7 @@ import {TODAY, PCS, PH, MODS, SPN, SPDESC, STATUS, ROLES, PRESETS} from "./data.
 import {compute, delivs, phaseOf, scopeOf, fmtD} from "./model.js";
 import * as S from "./store.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -77,7 +77,7 @@ function vList() {
   setBar(brand, "", roleBtn());
   view.innerHTML = '<h1 class="big">Vorhaben</h1>' + (S.backupDue() ? '<div class="note">Zeit für eine Sicherung. <a href="#/mehr">Unter Mehr exportieren</a>, damit nichts verloren geht.</div>' : "") + '<div class="fg"><label class="f sr" for="q">Suchen</label><input id="q" type="text" inputmode="search" placeholder="Suchen: Name, ID, Projektleitung" value="' + esc(ui.q) + '" autocomplete="off"></div>' +
     seg("filter", [["all", "Alle"], ["pe", "Freigabe offen"], ["on", "Laufend"], ["bl", "Blockiert"], ["mine", "Meine"]], ui.filter) +
-    '<div id="listBody">' + listRows() + '</div><p class="foot">' + S.state.P.length + ' Vorhaben. Datenstand ' + fmtD(TODAY) + '. Demo-Daten sind erfunden.</p>';
+    '<div id="listBody">' + listRows() + '</div><p class="foot">' + S.state.P.length + ' Vorhaben. Stand ' + fmtD(TODAY) + '.</p>';
 }
 
 function vDetail(r) {
@@ -138,6 +138,7 @@ function vCockpit() {
   setBar(brand, "", roleBtn());
   const P = S.state.P, cnt = k => P.filter(p => p.status === k).length, tot = P.filter(p => p.status !== "li" && p.status !== "ki").length;
   const cs = P.map(p => ({p, c: compute(p.c)})), pep = cs.filter(x => x.c.ok);
+  if (!P.length) { view.innerHTML = '<h1 class="big">Cockpit</h1><div class="empty">Noch keine Vorhaben erfasst. Das Cockpit füllt sich, sobald unter Neu eine Konfiguration eingereicht wird. Eine Anbindung an den Roadmap Master gibt es noch nicht.</div>'; return; }
   let h = '<h1 class="big">Cockpit</h1><div class="kpis">' +
     '<div class="kpi g"><b>' + tot + '</b><span>Vorhaben mit PEP</span></div><button class="kpi" data-act="goto" data-v="#/freigaben"><b>' + S.queue().length + '</b><span>Freigabe offen</span></button>' +
     '<div class="kpi"><b>' + (cnt("bl") + cnt("off")) + '</b><span>Blockiert oder Off Track</span></div><div class="kpi"><b>' + pep.reduce((a, x) => a + x.c.n, 0) + '</b><span>Reviews gesamt (Σ je Pfad)</span></div></div>';
@@ -151,9 +152,9 @@ function vCockpit() {
   h += "</div></div>";
   const hist = {}; pep.forEach(x => hist[x.c.n] = (hist[x.c.n] || 0) + 1); const ks = Object.keys(hist).map(Number).sort((a, b) => a - b), mx = Math.max(1, ...Object.values(hist));
   h += '<h2 class="sec">Verteilung der Review-Anzahl</h2><table class="sr"><caption>Anzahl Vorhaben je Review-Anzahl</caption><thead><tr><th>Reviews</th><th>Vorhaben</th></tr></thead><tbody>' + ks.map(k => "<tr><th>" + k + "</th><td>" + hist[k] + "</td></tr>").join("") + '</tbody></table><div class="card" aria-hidden="true"><div class="hist">' + ks.map(k => '<div style="height:' + hist[k] / mx * 100 + '%"><span>' + hist[k] + "</span></div>").join("") + '</div><div class="histx">' + ks.map(k => "<span>" + k + "</span>").join("") + "</div></div>";
-  const soon = P.filter(p => p.date && p.status !== "ki" && p.date >= TODAY && p.date <= "2026-12-23").sort((a, b) => a.date.localeCompare(b.date));
+  const lim = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), soon = P.filter(p => p.date && p.status !== "ki" && p.date >= TODAY && p.date <= lim).sort((a, b) => a.date.localeCompare(b.date));
   h += '<h2 class="sec">Nächste Gates (30 Tage)</h2>' + (soon.length ? '<ul class="group">' + soon.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.next) + '</span></span><span class="tr num">' + fmtD(p.date) + "</span></a></li>").join("") + "</ul>" : '<div class="empty">Keine Termine.</div>');
-  h += '<div class="btns"><button class="btn" data-act="report">Monatsreport</button><button class="btn" data-act="csv">Roadmap als CSV</button></div><p class="foot">Hinweis zur Ressourcenallokation: Die Review-Last je Pfad ist ein Planungsanhalt. Die Zahlen hier stammen aus erfundenen Demo-Daten.</p>';
+  h += '<div class="btns"><button class="btn" data-act="report">Monatsreport</button><button class="btn" data-act="csv">Roadmap als CSV</button></div><p class="foot">Hinweis zur Ressourcenallokation: Die Review-Last je Pfad ist ein Planungsanhalt. Die Zahlen stammen nur aus den hier erfassten Vorhaben.</p>';
   view.innerHTML = h;
 }
 
@@ -161,15 +162,15 @@ function vCockpit() {
 function vMore() {
   setBar(brand, "", roleBtn());
   const st = S.state;
-  view.innerHTML = '<h1 class="big">Mehr</h1><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter für die Demo, keine Anmeldung.</p></div>' +
+  view.innerHTML = '<h1 class="big">Mehr</h1><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter, keine Anmeldung.</p></div>' +
     '<h2 class="sec">Anzeige</h2>' + seg("theme", [["dark", "Dunkel"], ["light", "Hell"], ["auto", "Automatisch"]], st.theme) +
     '<p class="foot" style="margin:-6px 16px 6px">Schriftgröße</p>' + seg("fs", [[1, "A"], [1.15, "A+"], [1.3, "A++"], [1.5, "A+++"]], st.fs) +
     '<ul class="group"><li class="row"><label class="t" for="hc">Kontrast erhöhen<span class="s">Kräftigere Trennlinien und Zusatztexte</span></label><span class="sw"><input id="hc" type="checkbox" data-hc' + (st.hc ? " checked" : "") + '><span></span></span></li></ul>' +
     '<h2 class="sec">Datensicherung</h2><ul class="group"><li><button class="row" data-act="exportjson"><span class="t">Sicherung exportieren (JSON)</span><span class="chev">›</span></button></li><li><label class="row" for="imp" style="cursor:pointer"><span class="t">Sicherung laden</span><span class="chev">›</span></label><input id="imp" type="file" accept=".json,application/json" class="sr"></li><li><button class="row" data-act="csv"><span class="t">Roadmap exportieren (CSV)</span><span class="chev">›</span></button></li>' +
     (st.corrupt && S.corruptRaw() ? '<li><button class="row" data-act="defekt"><span class="t">Beschädigte Daten herunterladen<span class="s">Der Speicher war nicht lesbar und wurde beiseitegelegt.</span></span><span class="chev">›</span></button></li>' : "") +
-    '<li><button class="row" data-act="wipe"><span class="t"><b>Alle Daten löschen</b><span class="s">Lädt danach die Demo-Daten neu</span></span><span class="chev">›</span></button></li></ul>' +
+    '<li><button class="row" data-act="wipe"><span class="t"><b>Alle Daten löschen</b><span class="s">Danach ist die App leer</span></span><span class="chev">›</span></button></li></ul>' +
     '<p class="foot">Alle Daten liegen nur in diesem Browser (localStorage). Geräte teilen nichts. Für gemeinsame Nutzung wäre ein Server mit Anmeldung nötig.</p>' +
-    '<h2 class="sec">Über</h2><ul class="group"><li><button class="row" data-act="help"><span class="t">Tastenkürzel</span><span class="chev">›</span></button></li><li><a class="row" href="#/mehr/regeln"><span class="t">Regeln und Quellen</span><span class="chev">›</span></a></li><li><a class="row" href="#/mehr/offen"><span class="t">Offene Fragen</span><span class="chev">›</span></a></li>' + row("Version", VERSION) + row("Datenstand", fmtD(TODAY)) + "</ul>";
+    '<h2 class="sec">Über</h2><ul class="group"><li><button class="row" data-act="help"><span class="t">Tastenkürzel</span><span class="chev">›</span></button></li><li><a class="row" href="#/mehr/regeln"><span class="t">Regeln und Quellen</span><span class="chev">›</span></a></li><li><a class="row" href="#/mehr/offen"><span class="t">Offene Fragen</span><span class="chev">›</span></a></li>' + row("Version", VERSION) + row("Modell", "Studienarbeit T3100, Kap. 5.7") + "</ul>";
 }
 function vRules() {
   setBar(back("#/mehr", "Mehr"), "Regeln", roleBtn());
@@ -177,7 +178,7 @@ function vRules() {
 }
 function vOpen() {
   setBar(back("#/mehr", "Mehr"), "Offene Fragen", roleBtn());
-  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Welches gilt für die Anzeige?", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Wer entscheidet im PPB, und wie wird der Entscheid dokumentiert?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wie werden Reviews je Pfad für die Ressourcenplanung gezählt?", "Bleiben Gate-Termine in der App oder kommen sie aus der Roadmap?", "Sind die Zahlen aus den Folien (12 bis 15 Reviews, 52 von 124 blockiert) belegt?"];
+  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Welches gilt für die Anzeige?", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Wer entscheidet im PPB, und wie wird der Entscheid dokumentiert?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wie werden Reviews je Pfad für die Ressourcenplanung gezählt?", "Bleiben Gate-Termine in der App oder kommen sie aus der Roadmap?"];
   view.innerHTML = '<h1 class="big">Offene Fragen</h1><ul class="group">' + Q.map((q, i) => '<li class="row"><span class="t"><span class="s">Frage ' + (i + 1) + "</span>" + esc(q) + "</span></li>").join("") + "</ul>";
 }
 
@@ -189,10 +190,11 @@ function vWizard() {
   let h = '<div class="prog" aria-hidden="true">' + STEPS.map((_, i) => '<i class="' + (i < w.step ? "done" : i === w.step ? "on" : "") + '"></i>').join("") + '</div><h1 class="big">' + STEPS[w.step] + "</h1>";
   if (ui.wizErr) h += '<div class="err" role="alert">' + esc(ui.wizErr) + "</div>";
   if (w.step === 0) {
-    if (!w.meta) h += '<h2 class="sec" style="margin-top:0">Beispiel laden</h2><ul class="group">' + PRESETS.map((p, i) => '<li><button class="row" data-act="preset" data-i="' + i + '"><span class="t">' + esc(p.n) + '<span class="s">' + esc(p.s) + '</span></span><span class="chev">›</span></button></li>').join("") + "</ul>";
+    if (!w.meta) h += '<h2 class="sec" style="margin-top:0">Referenzfall laden (Tab. 16)</h2><ul class="group">' + PRESETS.map((p, i) => '<li><button class="row" data-act="preset" data-i="' + i + '"><span class="t">' + esc(p.n) + '<span class="s">' + esc(p.s) + '</span></span><span class="chev">›</span></button></li>').join("") + "</ul>";
     h += '<h2 class="sec">Angaben</h2><div class="card"><div class="fg"><label class="f" for="w-name">Name des Vorhabens</label><input id="w-name" data-f="name" type="text" value="' + esc(w.name) + '" maxlength="80" autocomplete="off"></div>' +
       '<div class="fg"><label class="f" for="w-pc">Product Center</label><select id="w-pc" data-f="pc">' + PCS.map(x => "<option" + (x === w.pc ? " selected" : "") + ">" + esc(x) + "</option>").join("") + '</select></div>' +
-      '<div class="fg"><label class="f" for="w-pl">Projektleitung</label><input id="w-pl" data-f="pl" type="text" value="' + esc(w.pl) + '" maxlength="60"></div>' +
+      '<div class="fg"><label class="f" for="w-pl">Projektleitung (Pflicht)</label><input id="w-pl" data-f="pl" type="text" value="' + esc(w.pl) + '" maxlength="60" autocomplete="off"></div>' +
+      '<div class="fg"><label class="f" for="w-date">Termin nächster Meilenstein (optional)</label><input id="w-date" data-f="date" type="date" value="' + esc(w.date) + '"></div>' +
       '<div class="fg"><label class="f" for="w-ref">Referenzprodukt (optional)</label><input id="w-ref" data-f="ref" type="text" value="' + esc(w.ref) + '" maxlength="80"></div>' +
       '<div class="fg" style="margin:0"><label class="f" for="w-desc">Kurzbeschreibung (optional)</label><textarea id="w-desc" data-f="desc" maxlength="400">' + esc(w.desc) + "</textarea></div></div>";
   } else if (w.step === 1) {
@@ -237,7 +239,7 @@ document.addEventListener("click", e => {
     case "help": openDlg(helpHtml()); break;
     case "filter": ui.filter = el.dataset.v; vList(); break;
     case "role": S.setRole(el.dataset.v); render(); break;
-    case "roledlg": openDlg('<h2 id="dlg-h">Rolle wählen</h2><p class="meta">Demo-Umschalter, keine Anmeldung.</p>' + seg("role", Object.entries(ROLES), S.state.role) + '<button class="btn" data-act="close">Fertig</button>'); break;
+    case "roledlg": openDlg('<h2 id="dlg-h">Rolle wählen</h2><p class="meta">Umschalter, keine Anmeldung.</p>' + seg("role", Object.entries(ROLES), S.state.role) + '<button class="btn" data-act="close">Fertig</button>'); break;
     case "theme": S.setTheme(el.dataset.v); applyTheme(); vMore(); break;
     case "goto": location.hash = el.dataset.v; break;
     case "recommend": undoable(() => S.recommend(id)); break;
@@ -251,13 +253,13 @@ document.addEventListener("click", e => {
     case "exportjson": download("PFAD-Sicherung-" + TODAY + ".json", S.exportJSON(), "application/json"); S.markBackup(); toast("Sicherung exportiert"); break;
     case "defekt": download("PFAD-beschaedigt.json", S.corruptRaw(), "application/json"); break;
     case "fs": S.setFs(+el.dataset.v); applyTheme(); vMore(); break;
-    case "wipe": openDlg('<h2 id="dlg-h">Alle Daten löschen?</h2><p class="meta">Eigene Vorhaben, Entwurf und Änderungen gehen verloren. Danach sind wieder die Demo-Daten geladen. Zur Bestätigung LÖSCHEN eintippen.</p><label class="f sr" for="wipe-in">Bestätigung</label><input id="wipe-in" type="text" autocomplete="off" autocapitalize="characters" placeholder="LÖSCHEN"><p class="err" id="werr" hidden>Bitte genau LÖSCHEN eintippen.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn destructive" data-main data-act="wipeok">Löschen</button></div>'); setTimeout(() => $("#wipe-in")?.focus(), 50); break;
-    case "wipeok": if ($("#wipe-in").value.trim() !== "LÖSCHEN") { $("#werr").hidden = false; break; } S.resetDemo(); applyTheme(); closeDlg(); toast("Alle Daten gelöscht, Demo geladen"); location.hash = "#/vorhaben"; render(); break;
+    case "wipe": openDlg('<h2 id="dlg-h">Alle Daten löschen?</h2><p class="meta">Alle Vorhaben, der Entwurf und die Einstellungen gehen verloren. Zur Bestätigung LÖSCHEN eintippen.</p><label class="f sr" for="wipe-in">Bestätigung</label><input id="wipe-in" type="text" autocomplete="off" autocapitalize="characters" placeholder="LÖSCHEN"><p class="err" id="werr" hidden>Bitte genau LÖSCHEN eintippen.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn destructive" data-main data-act="wipeok">Löschen</button></div>'); setTimeout(() => $("#wipe-in")?.focus(), 50); break;
+    case "wipeok": if ($("#wipe-in").value.trim() !== "LÖSCHEN") { $("#werr").hidden = false; break; } S.resetAll(); applyTheme(); closeDlg(); toast("Alle Daten gelöscht"); location.hash = "#/vorhaben"; render(); break;
     case "report": openDlg(report()); break;
     case "preset": S.state.draft = S.wizFromPreset(+el.dataset.i); ui.wizErr = ""; S.save(); vWizard(); break;
     case "thr": d.c.thr[+el.dataset.i] = +el.dataset.v; S.guardSpur(d); S.save(); vWizard(); break;
     case "q": d.c.q[+el.dataset.i] = +el.dataset.v; if (!d.c.q[0]) { d.c.q[1] = 1; d.c.q[2] = 1; } S.guardSpur(d); S.save(); vWizard(); break;
-    case "wiznext": { if (d.step === 0 && !d.name.trim()) { ui.wizErr = "Bitte einen Namen eingeben."; vWizard(); break; } wizGo(Math.min(5, d.step + 1)); break; }
+    case "wiznext": { if (d.step === 0 && (!d.name.trim() || !d.pl.trim())) { ui.wizErr = !d.name.trim() ? "Bitte einen Namen eingeben." : "Bitte die Projektleitung angeben."; vWizard(); break; } wizGo(Math.min(5, d.step + 1)); break; }
     case "wizprev": wizGo(Math.max(0, d.step - 1)); break;
     case "wizsum": { const r = compute(d.c); openDlg('<h2 id="dlg-h">Übersicht</h2><p class="meta">' + esc(d.name || "Ohne Namen") + " · " + esc(d.pc) + '</p><div class="spur"><div class="L">' + r.sp + "</div><div><b>" + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + r.on.length + " Bausteine aktiv, " + r.ab.length + ' abgewählt</p></div></div><div class="btns"><button class="btn" data-act="close">Weiter bearbeiten</button><button class="btn destructive" data-act="wizdrop">Entwurf verwerfen</button></div>'); break; }
     case "wizleave": location.hash = d.meta ? "#/vorhaben/" + encodeURIComponent(d.meta) : "#/vorhaben"; break;
@@ -294,7 +296,7 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", e => { const b = e.target.closest("[data-hold]"); if (b && e.detail === 0 && !b.disabled) setPct(b.dataset.hold, S.state.draft.c[b.dataset.hold] + +b.dataset.d, false); }); // Tastatur
 function report() {
   const P = S.state.P, n = k => P.filter(p => p.status === k).length, bl = P.filter(p => ["bl", "off"].includes(p.status));
-  return '<h2 id="dlg-h">Monatsreport ' + fmtD(TODAY) + '</h2><p class="meta">Aus den Demo-Daten erzeugt.</p><ul class="group">' + row("Vorhaben mit PEP", String(P.filter(p => p.status !== "li" && p.status !== "ki").length)) + row("On Track", String(n("on"))) + row("Off Track", String(n("off"))) + row("Blockiert", String(n("bl"))) + row("Freigabe offen", String(n("pe"))) + "</ul>" +
+  return '<h2 id="dlg-h">Monatsreport ' + fmtD(TODAY) + '</h2><p class="meta">Aus den hier erfassten Vorhaben erzeugt.</p><ul class="group">' + row("Vorhaben mit PEP", String(P.filter(p => p.status !== "li" && p.status !== "ki").length)) + row("On Track", String(n("on"))) + row("Off Track", String(n("off"))) + row("Blockiert", String(n("bl"))) + row("Freigabe offen", String(n("pe"))) + "</ul>" +
     (bl.length ? '<h2 class="sec">Aufmerksamkeit</h2><ul class="group">' + bl.map(p => '<li class="row"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.note || STATUS[p.status][0]) + "</span></span></li>").join("") + "</ul>" : "") + '<button class="btn" style="margin-top:16px" data-act="close">Schließen</button>';
 }
 

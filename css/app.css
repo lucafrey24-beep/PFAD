@@ -107,7 +107,7 @@ a.row,button.row{cursor:pointer}a.row:active,button.row:active{background:var(--
 /* Formulare */
 label.f{display:block;font-size:.8rem;color:var(--label-2);margin:0 0 5px}
 .fg{margin-bottom:14px}
-input[type=text],input[type=month],select,textarea{width:100%;background:var(--card-2);border:1px solid var(--sep);border-radius:10px;padding:11px 12px;font-size:1rem;min-height:46px}
+input[type=text],input[type=month],input[type=date],select,textarea{width:100%;background:var(--card-2);border:1px solid var(--sep);border-radius:10px;padding:11px 12px;font-size:1rem;min-height:46px}
 .group input,.group select{background:transparent}
 textarea{min-height:84px;resize:vertical}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--tint)}

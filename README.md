@@ -10,7 +10,7 @@ ES-Module und Service Worker brauchen einen Server (nicht `file://`):
 Ordnerinhalt in ein GitHub-Repo legen, Settings > Pages > Branch `main`, Ordner `/ (root)`. Danach auf dem Handy die URL öffnen und "Zum Home-Bildschirm" wählen. Bei jeder Änderung `CACHE` in `sw.js` erhöhen.
 
 ## Struktur
-- `js/model.js` Konfigurationslogik (ohne DOM), `js/data.js` Konstanten und Demo-Daten, `js/store.js` Zustand, Workflow, Export, `js/app.js` Oberfläche
+- `js/model.js` Konfigurationslogik (ohne DOM), `js/data.js` Konstanten (keine Beispielvorhaben), `js/store.js` Zustand, Workflow, Export, `js/app.js` Oberfläche
 - `icons/icon.svg` Quelle, `sh tools/make-icons.sh` erzeugt PNGs (rsvg-convert)
 
 ## Bedienung am PC
@@ -21,5 +21,5 @@ Ordnerinhalt in ein GitHub-Repo legen, Settings > Pages > Branch `main`, Ordner 
 ## Grenzen
 - Daten liegen nur im Browser (localStorage). Sicherung über Mehr > Exportieren.
 - Rollen sind ein Umschalter, keine Anmeldung.
-- Demo-Vorhaben sind erfunden. Schwellen 20 %/60 % und Max-Regel HW/SW sind Annahmen.
+- Es gibt keine Beispielvorhaben und keine Anbindung an den Roadmap Master. Schwellen 20 %/60 % und Max-Regel HW/SW sind Annahmen.
 - Gate-Schema der App (G1 bis G5) weicht vom Renew PEP (G0 bis G8) ab, Abgleich offen.

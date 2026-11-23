@@ -5,7 +5,7 @@ import * as F from "./files.js";
 import * as RW from "./rules.js";
 import * as S from "./store.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -188,7 +188,7 @@ function vCockpit() {
 function vMore() {
   setBar(brand, "", roleBtn());
   const st = S.state;
-  view.innerHTML = '<h1 class="big">Mehr</h1><ul class="group"><li><a class="row" href="#/mehr/regelwerk"><span class="t">Regelwerk<span class="s">Gates, Liefergegenstände, Schwellen und Bausteine selbst hinterlegen' + (RW.isDefault() ? "" : " · angepasst") + '</span></span><span class="chev">›</span></a></li><li><button class="row" data-act="reset"><span class="t"><b>Alles zurücksetzen</b><span class="s">Vorhaben, Nachweis-Dateien und Entwurf löschen, App startet leer (z. B. für eine Vorführung)</span></span><span class="chev">›</span></button></li></ul><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter, keine Anmeldung.</p></div>' +
+  view.innerHTML = '<h1 class="big">Mehr</h1><ul class="group"><li><a class="row" href="#/mehr/regelwerk"><span class="t">Regelwerk<span class="s">Gates, Liefergegenstände, Schwellen und Bausteine selbst hinterlegen' + (RW.isDefault() ? "" : " · angepasst") + '</span></span><span class="chev">›</span></a></li><li><button class="row" data-act="demoload"><span class="t">Beispielvorhaben laden<span class="s">14 fiktive Vorhaben in allen Status, mit Nachweisen, zum Ausprobieren</span></span><span class="chev">›</span></button></li>' + (S.hasDemo() ? '<li><button class="row" data-act="demodel"><span class="t">Beispielvorhaben entfernen<span class="s">Eigene Vorhaben bleiben erhalten</span></span><span class="chev">›</span></button></li>' : "") + '<li><button class="row" data-act="reset"><span class="t"><b>Alles zurücksetzen</b><span class="s">Vorhaben, Nachweis-Dateien und Entwurf löschen, App startet leer (z. B. für eine Vorführung)</span></span><span class="chev">›</span></button></li></ul><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter, keine Anmeldung.</p></div>' +
     '<h2 class="sec">Anzeige</h2>' + seg("theme", [["dark", "Dunkel"], ["light", "Hell"], ["auto", "Automatisch"]], st.theme) +
     '<p class="foot" style="margin:-6px 16px 6px">Schriftgröße</p>' + seg("fs", [[1, "A"], [1.15, "A+"], [1.3, "A++"], [1.5, "A+++"]], st.fs) +
     '<ul class="group"><li class="row"><label class="t" for="hc">Kontrast erhöhen<span class="s">Kräftigere Trennlinien und Zusatztexte</span></label><span class="sw"><input id="hc" type="checkbox" data-hc' + (st.hc ? " checked" : "") + '><span></span></span></li></ul>' +
@@ -325,6 +325,8 @@ document.addEventListener("click", e => {
     case "exportjson": download("PFAD-Sicherung-" + TODAY + ".json", S.exportJSON(), "application/json"); S.markBackup(); toast("Sicherung exportiert"); break;
     case "defekt": download("PFAD-beschaedigt.json", S.corruptRaw(), "application/json"); break;
     case "fs": S.setFs(+el.dataset.v); applyTheme(); vMore(); break;
+    case "demoload": S.loadDemo().then(n => { toast(n + " Beispielvorhaben geladen"); location.hash = "#/vorhaben"; render(); }); break;
+    case "demodel": { const n = S.removeDemo(); toast(n + " Beispielvorhaben entfernt"); render(); break; }
     case "reset": openDlg('<h2 id="dlg-h">Alles zurücksetzen?</h2><p class="meta">Alle Vorhaben, hochgeladene Nachweis-Dateien und der Entwurf werden gelöscht. Das lässt sich nicht rückgängig machen.</p><div class="row"><label class="t" for="rr">Regelwerk auch auf Standard setzen (entfernt importierte Inhalte)</label><span class="sw"><input id="rr" type="checkbox"><span></span></span></div><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="resetok">Zurücksetzen</button></div>'); break;
     case "resetok": { const rr = $("#rr")?.checked; S.resetAll(); F.clearAll().catch(() => {}); if (rr) RW.resetRules(); applyTheme(); closeDlg(); toast("Zurückgesetzt, die App ist leer"); location.hash = "#/vorhaben"; render(); break; }
     case "wipe": openDlg('<h2 id="dlg-h">Alle Daten löschen?</h2><p class="meta">Alle Vorhaben, der Entwurf und die Einstellungen gehen verloren. Zur Bestätigung LÖSCHEN eintippen.</p><label class="f sr" for="wipe-in">Bestätigung</label><input id="wipe-in" type="text" autocomplete="off" autocapitalize="characters" placeholder="LÖSCHEN"><p class="err" id="werr" hidden>Bitte genau LÖSCHEN eintippen.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn destructive" data-main data-act="wipeok">Löschen</button></div>'); setTimeout(() => $("#wipe-in")?.focus(), 50); break;

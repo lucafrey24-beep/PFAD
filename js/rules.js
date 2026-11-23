@@ -7,7 +7,7 @@ import {MODS} from "./data.js";
 
 const KEY = "pfad-rules", STUFEN = ["Full", "Standard", "Light"], PROCS = ["Device", "Digital"];
 export const GATE_IDS = ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8"];
-const SEED = [["G1", "Idee / Problem", "D", ["Device"], "Studienarbeit"], ["G1", "Strategie-Fit", "D", ["Device"], "Studienarbeit"], ["G1", "Spur gewählt", "D", ["Device"], "Studienarbeit"]];
+const SEED = [["G1", "Idee / Problem", "D", ["Device", "Digital"], "Studienarbeit"], ["G1", "Strategie-Fit", "D", ["Device", "Digital"], "Studienarbeit"], ["G1", "Spur gewählt", "D", ["Device", "Digital"], "Studienarbeit"], ["G2", "Business Case", "D", ["Device", "Digital"], "Studienarbeit"], ["G2", "Projektplan", "D", ["Device", "Digital"], "Studienarbeit"], ["G2", "Risikoanalyse", "D", ["Device", "Digital"], "Studienarbeit"], ["G2", "Konfiguration", "D", ["Device", "Digital"], "Studienarbeit"], ["G3", "Statusbericht", "D", ["Device", "Digital"], "Studienarbeit"], ["G3", "Risiken aktualisiert", "D", ["Device", "Digital"], "Studienarbeit"], ["G4", "Produktinformation", "D", ["Device", "Digital"], "Studienarbeit"], ["G4", "Freigabeempfehlung", "D", ["Device", "Digital"], "Studienarbeit"], ["G6", "Abschlussbericht", "D", ["Device", "Digital"], "Studienarbeit"], ["G6", "Lessons Learned", "D", ["Device", "Digital"], "Studienarbeit"], ["G6", "Rollen im Lebenszyklus", "D", ["Device", "Digital"], "Studienarbeit"]];
 const mk = () => ({
   v: 1,
   thr: {light: 20, full: 60},

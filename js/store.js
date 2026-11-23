@@ -2,6 +2,7 @@
 import {TODAY, PCS, STATUS, ROLES, SPN, PRESETS} from "./data.js";
 import {compute, fmtD, stepDelivs} from "./model.js";
 import {rules, importRules} from "./rules.js";
+import {putFile, sha256} from "./files.js";
 
 const LS = "pfad-data";
 export const state = {P: [], seq: 1, role: "PL", theme: "dark", draft: null, fs: 1, hc: false, lastBackup: 0, since: 0, corrupt: false};
@@ -129,6 +130,61 @@ export function submitWiz(w) {
   if (!state.since) state.since = Date.now();
   state.P.unshift(p); state.draft = null; save();
   return {id: p.id, msg: r.ok ? "Angelegt: " + p.id + ". Nachweise im Vorhaben ergänzen, Freigabe läuft" : "Als Roadmap-Eintrag ohne PEP angelegt"};
+}
+
+/* ---------- Beispielvorhaben (fiktiv, nur auf Wunsch geladen und als Beispiel gekennzeichnet) ---------- */
+const iso = d => { const x = new Date(); x.setDate(x.getDate() - d); return x.toISOString(); };
+const dat = d => { const x = new Date(TODAY + "T12:00:00"); x.setDate(x.getDate() + d); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
+const DEMO = [
+  {n: "Diagnosegerät Alpha", pc: 0, pl: "Muster, A.", q: [1, 1, 1], hw: 80, sw: 60, opt: {o1: 1}, done: 3, st: "on", date: 21, files: 4},
+  {n: "Messmodul Bravo", pc: 1, pl: "Beispiel, B.", q: [1, 1, 1], hw: 70, sw: 40, opt: {}, done: 1, st: "pe", stage: "ms", wait: 3, files: 3},
+  {n: "Kalibrier-Tool Charlie", pc: 1, pl: "Muster, C.", q: [1, 1, 0], hw: 30, sw: 50, opt: {}, done: 2, st: "off", date: -12, files: 2},
+  {n: "App-Update Delta", pc: 2, pl: "Beispiel, D.", q: [0, 1, 1], hw: 0, sw: 75, opt: {o1: 1}, done: 2, st: "pe", stage: "ppb", wait: 6, files: 3},
+  {n: "Schnittstelle Echo", pc: 0, pl: "Muster, E.", q: [1, 0, 1], hw: 0, sw: 15, opt: {}, done: 0, st: "pe", stage: "ms", wait: 1, files: 1},
+  {n: "Datenportal Foxtrot", pc: 2, pl: "Beispiel, F.", q: [0, 1, 1], hw: 0, sw: 40, opt: {}, done: 1, st: "bl", date: -5, files: 0, note: "Wartet auf Freigabe der Schnittstellenspezifikation"},
+  {n: "Sensorik Golf", pc: 1, pl: "Muster, G.", q: [1, 1, 0], hw: 45, sw: 30, opt: {}, done: 1, st: "re", files: 2, note: "MS Gate Committee: Risikoanalyse ist unvollständig"},
+  {n: "Update-Service Hotel", pc: 2, pl: "Beispiel, H.", q: [0, 1, 1], hw: 0, sw: 10, opt: {}, done: 0, st: "ho", files: 0, note: "PPB Hold: Priorität neu bewerten"},
+  {n: "Adapter India", pc: 0, pl: "Muster, I.", q: [1, 1, 1], hw: 90, sw: 20, opt: {}, done: 2, st: "ki", files: 1, note: "PPB Kill: Markt entfällt"},
+  {n: "Cloud-Backend Juliett", pc: 2, pl: "Beispiel, J.", q: [0, 1, 1], hw: 0, sw: 65, opt: {}, done: 99, st: "do", files: 5},
+  {n: "Zubehör Kilo", pc: 0, pl: "Muster, K.", q: [1, 0, 0], hw: 0, sw: 8, opt: {}, done: 0, st: "li", files: 0, thr: [1, 0, 0]},
+  {n: "Gerät Lima", pc: 1, pl: "Beispiel, L.", q: [1, 1, 0], hw: 70, sw: 40, opt: {}, done: 4, st: "on", date: 9, files: 6},
+  {n: "Plattform Mike", pc: 2, pl: "Muster, M.", q: [0, 1, 1], hw: 0, sw: 35, opt: {}, done: 1, st: "on", date: 40, files: 1},
+  {n: "Diagnoseupdate November", pc: 0, pl: "Beispiel, N.", q: [1, 0, 1], hw: 0, sw: 45, opt: {}, done: 1, st: "pe", stage: "ppb", wait: 12, files: 2}
+];
+export const hasDemo = () => state.P.some(p => p.ex);
+export function removeDemo() { const n = state.P.filter(p => p.ex).length; state.P = state.P.filter(p => !p.ex); save(); return n; }
+export async function loadDemo() {
+  if (state.role !== "PL") state.role = "PL";
+  removeDemo();
+  let seq = 1;
+  for (const d of DEMO) {
+    const c = emptyC(); Object.assign(c, {q: [...d.q], hw: d.hw, sw: d.sw, opt: {...d.opt}}); if (d.thr) c.thr = [...d.thr];
+    guardSpur({c}); const r = compute(c);
+    const p = {id: "B-" + String(seq++).padStart(2, "0"), name: "Beispiel: " + d.n, pc: PCS[d.pc], pl: d.pl, ref: "", desc: "Fiktives Beispielvorhaben zur Vorführung", c, ex: true, status: d.st, last: "–", next: "–", date: d.date !== undefined ? dat(d.date) : "", note: d.note || "",
+      mine: false, fresh: false, appr: {spur: false, stufe: false}, steps: {}, stage: d.stage || "ms", rec: "", ver: 1, versions: [{ver: 1, date: fmtD(TODAY), path: r.path}], log: []};
+    const lg = (ago, who, x) => { const t = new Date(TODAY + "T12:00:00"); t.setDate(t.getDate() - ago); p.log.push({t: fmtD(t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0")), who, x}); };
+    lg(60, "Projektleitung (" + d.pl + ")", "Vorhaben mit Konfiguration " + r.path + " angelegt");
+    if (!r.ok) { p.note = "unter den Projektschwellen"; p.next = "–"; state.P.push(p); continue; }
+    const ord = r.order, nDone = Math.min(d.done, ord.length);
+    ord.forEach((o, i) => { const s = stepOf(p, o.n); if (i < nDone) { s.st = "ok"; s.decided = iso(50 - i * 8); s.subAt = iso(55 - i * 8); s.n = 1; if (o.n === "G1" || o.n === "G1+2") p.appr.spur = true; if (o.n === "G2" || o.n === "G1+2") { p.appr.spur = true; p.appr.stufe = true; } lg(50 - i * 8, "PPB", "Go: " + stepLabel(o) + " freigegeben"); } });
+    const cs = ord[nDone] || null;
+    p.last = nDone ? stepLabel(ord[nDone - 1]) : "–"; p.next = cs ? stepLabel(cs) : "–";
+    if (d.st === "pe" && cs) { const s = stepOf(p, cs.n); s.st = "sub"; s.subAt = iso(d.wait); s.n = 1; p.subAt = s.subAt; p.submitted = fmtD(dat(-d.wait)); p.date = ""; if (p.stage === "ppb") p.rec = "Empfohlen (MS Gate Committee, " + fmtD(dat(-Math.max(0, d.wait - 2))) + ")"; lg(d.wait, "Projektleitung (" + d.pl + ")", stepLabel(cs) + " eingereicht"); if (p.stage === "ppb") lg(Math.max(0, d.wait - 2), "MS Gate Committee", stepLabel(cs) + ": Prüfung abgeschlossen, Empfehlung an PPB"); }
+    if (d.st === "re" && cs) { stepOf(p, cs.n).st = "mod"; lg(4, "MS Gate Committee", stepLabel(cs) + ", Zurück an PL: " + d.note.replace("MS Gate Committee: ", "")); }
+    if (d.st === "ho" && cs) { stepOf(p, cs.n).st = "hold"; lg(8, "PPB", stepLabel(cs) + ", Hold: " + d.note.replace("PPB Hold: ", "")); }
+    if (d.st === "ki" && cs) { stepOf(p, cs.n).st = "kill"; p.next = "abgebrochen"; lg(10, "PPB", stepLabel(cs) + ", Kill: " + d.note.replace("PPB Kill: ", "")); }
+    if (d.st === "do") { p.status = "do"; p.next = "–"; p.date = ""; }
+    // Nachweis-Dateien (kleine Textdateien im Browser-Speicher), verteilt auf erledigte und laufende Schritte
+    const hold = ord.slice(0, Math.min(ord.length, nDone + 1));
+    for (let k = 0; k < d.files && hold.length; k++) {
+      const o = hold[k % hold.length], dv = stepDelivs(r, o), name = (dv[k % Math.max(1, dv.length)] || "Nachweis").replace(/[^\wäöüÄÖÜß\- ]/g, "").trim().replace(/ +/g, "_") + "_" + (k + 1) + ".txt";
+      const blob = new Blob(["Beispiel-Nachweis für " + p.name + "\nSchritt: " + stepLabel(o) + "\nFiktiv, nur für die Vorführung.\n"], {type: "text/plain"}), fid = "demo-" + p.id + "-" + k;
+      try { const sha = await sha256(blob); await putFile(fid, blob); stepOf(p, o.n).files.push({id: fid, name, size: blob.size, type: "text/plain", at: iso(20 - k), dv: dv.length ? dv[k % dv.length] : "", sha}); } catch (e) { /* Speicher gesperrt: Beispiel ohne Datei */ }
+    }
+    state.P.push(p);
+  }
+  if (!state.since) state.since = Date.now();
+  state.seq = Math.max(state.seq, 1); norm(); save(); return state.P.filter(p => p.ex).length;
 }
 
 /* ---------- Freigabe-Workflow: MS Gate Committee prüft, PPB entscheidet ---------- */

@@ -1,6 +1,6 @@
 // Zustand, Speicherung (localStorage), Freigabe-Workflow, Exporte. Alle Daten bleiben auf dem Gerät.
 import {TODAY, PCS, STATUS, ROLES, SPN, PRESETS} from "./data.js";
-import {compute, fmtD} from "./model.js";
+import {compute, fmtD, stepDelivs} from "./model.js";
 
 const LS = "pfad-data";
 export const state = {P: [], seq: 1, role: "PL", theme: "dark", draft: null, fs: 1, hc: false, lastBackup: 0, since: 0, corrupt: false};
@@ -12,10 +12,17 @@ export function validP(a) {
     p.c && Array.isArray(p.c.q) && p.c.q.length === 3 && Array.isArray(p.c.thr) && p.c.thr.length === 3 && Number.isFinite(p.c.hw) && Number.isFinite(p.c.sw) &&
     (!p.date || /^\d{4}-\d{2}-\d{2}$/.test(p.date)) && (!p.submitted || /^[\d.]{1,12}$/.test(p.submitted)));
 }
+function legacySteps(p) {
+  if (p.stepsInit || !p.steps || Object.keys(p.steps).length) { p.stepsInit = true; return; }
+  p.stepsInit = true; const r = compute(p.c); if (!r.ok || !p.last || p.last === "–") return;
+  const i = r.order.findIndex(o => p.last.startsWith(o.n + " ") || p.last === o.n);
+  r.order.forEach((o, j) => { if (j <= i) p.steps[o.n] = {st: "ok", files: []}; });
+}
 function norm() {
   state.P.forEach(p => {
     p.appr = p.appr || {spur: false, stufe: false}; p.log = Array.isArray(p.log) ? p.log : []; p.versions = Array.isArray(p.versions) ? p.versions : [];
-    p.ver = p.ver || 1; p.stage = p.stage === "ppb" ? "ppb" : "ms"; p.rec = p.rec || ""; p.c.sel = p.c.sel || {}; p.c.opt = p.c.opt || {}; p.c.why = p.c.why || {};
+    p.steps = p.steps || {}; p.ver = p.ver || 1; p.stage = p.stage === "ppb" ? "ppb" : "ms"; p.rec = p.rec || ""; p.c.sel = p.c.sel || {}; p.c.opt = p.c.opt || {}; p.c.why = p.c.why || {};
+    legacySteps(p); if (p.status !== "li") syncSteps(p);
   });
 }
 export function save() { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) { /* Speicher voll oder gesperrt */ } }
@@ -60,6 +67,37 @@ export function wizFromProject(p) {
 }
 export function missingWhy(w) { const r = compute(w.c); return r.ab.filter(m => !(w.c.why[m.id] || "").trim()); }
 
+/* ---------- Schritte und Nachweise ---------- */
+export const stepOf = (p, k) => (p.steps[k] = p.steps[k] || {st: "open", files: []});
+export const stepLabel = o => o.n + (o.t ? " " + o.t : "");
+export function syncSteps(p) {
+  const r = compute(p.c); if (!r.ok) return;
+  r.order.forEach(o => stepOf(p, o.n));
+  const fix = (k, v) => { if (r.order.some(o => o.n === k)) { const s = stepOf(p, k); if (v) s.st = "ok"; else if (s.st === "ok") s.st = "open"; } };
+  fix("G1", p.appr.spur); fix("G2", p.appr.stufe); fix("G1+2", p.appr.stufe);
+}
+export const curStep = p => { const r = compute(p.c); return r.ok ? r.order.find(o => stepOf(p, o.n).st !== "ok") || null : null; };
+export const subStep = p => { const r = compute(p.c); return r.ok ? r.order.find(o => stepOf(p, o.n).st === "sub") || null : null; };
+export function progress(p) { const r = compute(p.c); return r.ok ? {done: r.order.filter(o => stepOf(p, o.n).st === "ok").length, total: r.order.length} : {done: 0, total: 0}; }
+export const overdue = p => !!p.date && p.date < TODAY && ["on", "off", "bl", "re", "pe", "ho"].includes(p.status);
+export const waitDays = p => p.subAt ? Math.max(0, Math.floor((Date.now() - Date.parse(p.subAt)) / 864e5)) : 0;
+export function canSubmitStep(p) { const o = curStep(p); return state.role === "PL" && ["on", "off", "bl", "re"].includes(p.status) && !!o && ["open", "mod"].includes(stepOf(p, o.n).st); }
+export function canEditFiles(p, k) { const s = stepOf(p, k); return state.role === "PL" && !["ki", "do", "li"].includes(p.status) && (["open", "mod"].includes(s.st) || (s.st === "sub" && p.status === "pe" && p.stage === "ms")); }
+export function missingDelivs(p, o) { const r = compute(p.c), s = stepOf(p, o.n); return stepDelivs(r, o).filter(d => !s.files.some(f => f.dv === d)); }
+export function addFileMeta(id, k, meta) { const p = byId(id); if (!p) return; const s = stepOf(p, k); s.files.push(meta); if (s.st === "sub") logE(p, "Projektleitung (" + p.pl + ")", "Nachweis ergänzt: " + meta.name); save(); }
+export function removeFileMeta(id, k, fid) { const p = byId(id); if (!p) return null; const s = stepOf(p, k), i = s.files.findIndex(f => f.id === fid); if (i < 0) return null; const [f] = s.files.splice(i, 1); if (s.st === "sub") logE(p, "Projektleitung (" + p.pl + ")", "Nachweis entfernt: " + f.name); save(); return f; }
+export function setDate(id, d) { const p = byId(id); if (p && state.role === "PL" && (!d || /^\d{4}-\d{2}-\d{2}$/.test(d))) { p.date = d; save(); } }
+function markSub(p, o, note) {
+  const s = stepOf(p, o.n); s.st = "sub"; s.subAt = new Date().toISOString(); s.n = (s.n || 0) + 1;
+  Object.assign(p, {status: "pe", stage: "ms", rec: "", note: "", next: stepLabel(o), submitted: fmtD(TODAY), subAt: s.subAt, fresh: true});
+  logE(p, "Projektleitung (" + p.pl + ")", stepLabel(o) + " eingereicht (" + s.files.length + " Dateien)" + (p.cfgPending ? ", mit Konfigurationsänderung " + p.cfgPending.from + " → " + p.cfgPending.to : "") + (note ? ": " + note : ""));
+}
+export function submitStep(id, note) {
+  const p = byId(id); if (!p || !canSubmitStep(p)) return {error: "Einreichen ist in dieser Rolle oder diesem Status nicht möglich"};
+  const o = curStep(p); markSub(p, o, (note || "").trim()); save(); return {msg: stepLabel(o) + " eingereicht: " + p.name};
+}
+const sig = r => r.sp + "|" + r.st + "|" + r.on.map(m => m.id).sort().join(",");
+
 export function submitWiz(w) {
   if (state.role !== "PL") return {error: "Einreichen nur in der Rolle Projektleitung"};
   if (!w.name.trim()) return {error: "Bitte einen Namen eingeben", step: 0};
@@ -67,63 +105,66 @@ export function submitWiz(w) {
   const miss = missingWhy(w);
   if (miss.length) return {error: "Begründung fehlt für: " + miss.map(m => m.t).join(", "), step: 4};
   const r = compute(w.c), snap = JSON.parse(JSON.stringify(w.c)); snap.lastSp = null;
-  const p0 = w.meta ? byId(w.meta) : null;
+  const p0 = w.meta ? byId(w.meta) : null, who = n => "Projektleitung (" + n + ")";
   if (p0) {
-    const old = compute(p0.c), wasStufe = !!p0.appr.stufe;
-    Object.assign(p0, {name: w.name.trim(), pc: w.pc, pl: w.pl.trim(), ref: w.ref.trim(), desc: w.desc.trim(), c: snap,
-      status: r.ok ? "pe" : "li", next: r.ok ? "Konfiguration" : "–", date: w.date || "", note: "", submitted: fmtD(TODAY), fresh: true, stage: "ms", rec: ""});
-    p0.ver++; p0.versions.push({ver: p0.ver, date: fmtD(TODAY), path: r.path});
-    const who = "Projektleitung (" + p0.pl + ")";
-    if (old.path !== r.path && (p0.appr.spur || wasStufe)) {
-      if (old.sp !== r.sp) p0.appr.spur = false; p0.appr.stufe = false;
-      logE(p0, who, "Konfigurationsänderung " + old.path + " → " + r.path + ", Neufreigabe erforderlich");
-    } else logE(p0, who, "Konfiguration " + r.path + " (Version " + p0.ver + ") eingereicht");
-    state.draft = null; save(); return {id: p0.id, msg: "Eingereicht: " + p0.id + " (Version " + p0.ver + ")"};
+    const old = compute(p0.c);
+    Object.assign(p0, {name: w.name.trim(), pc: w.pc, pl: w.pl.trim(), ref: w.ref.trim(), desc: w.desc.trim(), c: snap, date: w.date || ""});
+    p0.ver++; p0.versions.push({ver: p0.ver, date: fmtD(TODAY), path: r.path}); state.draft = null;
+    if (!r.ok) { p0.status = "li"; p0.next = "–"; p0.note = "unter den Projektschwellen"; save(); return {id: p0.id, msg: "Gespeichert: unter den Projektschwellen, kein PEP"}; }
+    syncSteps(p0);
+    if (!p0.appr.spur && !p0.appr.stufe) { markSub(p0, r.order[0], "Konfiguration " + r.path + " (Version " + p0.ver + ")"); save(); return {id: p0.id, msg: "Eingereicht: " + p0.id + " (Version " + p0.ver + ")"}; }
+    if (old.ok && sig(r) !== sig(old)) {
+      if (old.sp !== r.sp) { p0.appr.spur = false; p0.appr.stufe = false; syncSteps(p0); logE(p0, who(p0.pl), "Spur geändert " + old.path + " → " + r.path + ", Neufreigabe ab G1 erforderlich"); save(); return {id: p0.id, msg: "Spur geändert: Neufreigabe ab G1, bitte erneut einreichen"}; }
+      if (p0.appr.stufe) { p0.cfgPending = {from: old.path, to: r.path}; const c = curStep(p0); logE(p0, who(p0.pl), "Konfigurationsänderung " + old.path + " → " + r.path + ", Freigabe am nächsten Gate" + (c ? " (" + stepLabel(c) + ")" : "")); save(); return {id: p0.id, msg: "Gespeichert: Änderung wird am nächsten Gate mit freigegeben"}; }
+      logE(p0, who(p0.pl), "Konfiguration " + r.path + " angepasst (Version " + p0.ver + ")"); save(); return {id: p0.id, msg: "Gespeichert: Stufe und Bausteine folgen an G2"};
+    }
+    save(); return {id: p0.id, msg: "Gespeichert"};
   }
   const p = {id: "V-" + String(state.seq++).padStart(3, "0"), name: w.name.trim(), pc: w.pc, pl: w.pl.trim(), ref: w.ref.trim(), desc: w.desc.trim(), c: snap,
-    status: r.ok ? "pe" : "li", last: "–", next: r.ok ? "Konfiguration" : "–", date: w.date || "", note: r.ok ? "" : "unter den Projektschwellen",
-    mine: true, submitted: fmtD(TODAY), fresh: true, appr: {spur: false, stufe: false}, stage: "ms", rec: "", ver: 1, versions: [{ver: 1, date: fmtD(TODAY), path: r.path}], log: []};
-  logE(p, "Projektleitung (" + p.pl + ")", r.ok ? "Konfiguration " + r.path + " eingereicht" : "Als Roadmap-Eintrag ohne PEP angelegt (unter den Projektschwellen)");
+    status: r.ok ? "pe" : "li", last: "–", next: "–", date: w.date || "", note: r.ok ? "" : "unter den Projektschwellen",
+    mine: true, fresh: true, appr: {spur: false, stufe: false}, steps: {}, stage: "ms", rec: "", ver: 1, versions: [{ver: 1, date: fmtD(TODAY), path: r.path}], log: []};
+  logE(p, who(p.pl), r.ok ? "Vorhaben mit Konfiguration " + r.path + " angelegt" : "Als Roadmap-Eintrag ohne PEP angelegt (unter den Projektschwellen)");
+  if (r.ok) { syncSteps(p); markSub(p, r.order[0], ""); }
   if (!state.since) state.since = Date.now();
   state.P.unshift(p); state.draft = null; save();
-  return {id: p.id, msg: r.ok ? "Eingereicht: " + p.id + " liegt in der Freigabe-Warteschlange" : "Als Roadmap-Eintrag ohne PEP angelegt"};
+  return {id: p.id, msg: r.ok ? "Angelegt: " + p.id + ". Nachweise im Vorhaben ergänzen, Freigabe läuft" : "Als Roadmap-Eintrag ohne PEP angelegt"};
 }
 
 /* ---------- Freigabe-Workflow: MS Gate Committee prüft, PPB entscheidet ---------- */
 export function recommend(id) {
-  const p = byId(id); if (!p || state.role !== "MS" || p.status !== "pe" || p.stage !== "ms") return null;
-  p.stage = "ppb"; p.rec = "Empfohlen (MS Gate Committee, " + fmtD(TODAY) + ")"; logE(p, "MS Gate Committee", "Prüfung abgeschlossen, Empfehlung an PPB");
+  const p = byId(id), o = p && subStep(p); if (!p || !o || state.role !== "MS" || p.status !== "pe" || p.stage !== "ms") return null;
+  p.stage = "ppb"; p.rec = "Empfohlen (MS Gate Committee, " + fmtD(TODAY) + ")"; logE(p, "MS Gate Committee", stepLabel(o) + ": Prüfung abgeschlossen, Empfehlung an PPB");
   save(); return p.name + ": Empfehlung an PPB übergeben";
 }
 export function goDecision(id) {
-  const p = byId(id); if (!p || state.role !== "PPB" || p.status !== "pe" || p.stage !== "ppb") return null;
-  const r = compute(p.c), sc = r.light ? "both" : (!p.appr.spur ? "spur" : "stufe");
-  if (sc === "spur") { p.appr.spur = true; p.last = "G1 Ideenfreigabe (Spur " + r.sp + ")"; p.next = "G2 Stufe und Bausteine"; p.date = ""; }
-  else {
-    p.appr.spur = p.appr.stufe = true; p.last = r.light ? "G1+2 Startfreigabe" : "G2 Konzeptfreigabe (Stufe, Bausteine)";
-    const n = r.order.find(o => o.x > 2); p.next = n ? (n.rv ? n.n : n.n + " " + n.t) : "G5 Projektabschluss"; p.date = "";
-  }
-  p.status = "on"; p.stage = "ms"; p.rec = ""; p.note = ""; p.fresh = true;
-  logE(p, "PPB", "Go: " + (sc === "spur" ? "Spur " + r.sp + " an G1 freigegeben" : "Stufe " + r.st + " und Bausteine freigegeben (" + r.path + ")"));
-  save(); return sc === "spur" ? p.name + ": Spur " + r.sp + " freigegeben, Stufe und Bausteine folgen an G2" : p.name + ": Konfiguration " + r.path + " freigegeben";
+  const p = byId(id), o = p && subStep(p); if (!p || !o || state.role !== "PPB" || p.status !== "pe" || p.stage !== "ppb") return null;
+  const r = compute(p.c), s = stepOf(p, o.n); s.st = "ok"; s.decided = new Date().toISOString();
+  if (o.n === "G1") p.appr.spur = true; else if (o.n === "G2" || o.n === "G1+2") { p.appr.spur = true; p.appr.stufe = true; }
+  const had = p.cfgPending; delete p.cfgPending;
+  p.last = stepLabel(o); const nx = curStep(p); p.next = nx ? stepLabel(nx) : "–"; p.date = "";
+  p.status = nx ? "on" : "do"; p.stage = "ms"; p.rec = ""; p.note = ""; p.fresh = true;
+  logE(p, "PPB", "Go: " + stepLabel(o) + " freigegeben" + (o.n === "G1" ? " (Spur " + r.sp + ")" : "") + (had ? ", Konfigurationsänderung " + had.from + " → " + had.to + " freigegeben" : ""));
+  save(); return p.name + ": " + stepLabel(o) + " freigegeben" + (nx ? "" : ", Vorhaben abgeschlossen");
 }
 export const REASONS = {
-  ret: {t: "Zurück an die Projektleitung", role: "MS", st: "re", who: "MS Gate Committee", pre: "MS Gate Committee: ", log: "Zurück an PL", txt: "Bitte die Generationsstufe begründen: Welche Teilsysteme werden vom Referenzprodukt übernommen?", next: "Konfiguration überarbeiten", ok: "Zurücksenden", hint: "Die Projektleitung sieht den Kommentar im Vorhaben."},
-  modify: {t: "Modify: Nachbesserung", role: "PPB", st: "re", who: "PPB", pre: "PPB Modify: ", log: "Modify", txt: "", next: "Konfiguration überarbeiten", ok: "Modify entscheiden", hint: "Die Projektleitung bessert nach und reicht erneut ein."},
-  hold: {t: "Hold: Vorhaben pausieren", role: "PPB", st: "ho", who: "PPB", pre: "PPB Hold: ", log: "Hold", txt: "", next: "Hold, Wiederaufnahme durch PPB", ok: "Hold entscheiden", hint: "Das PPB kann den Hold später aufheben."},
-  kill: {t: "Kill: Vorhaben abbrechen", role: "PPB", st: "ki", who: "PPB", pre: "PPB Kill: ", log: "Kill", txt: "", next: "abgebrochen", ok: "Kill entscheiden", hint: "Das Vorhaben wird beendet."}
+  ret: {t: "Zurück an die Projektleitung", role: "MS", st: "re", ss: "mod", who: "MS Gate Committee", pre: "MS Gate Committee: ", log: "Zurück an PL", txt: "Was fehlt oder ist unklar?", next: "Überarbeiten und erneut einreichen", ok: "Zurücksenden", hint: "Die Projektleitung sieht den Kommentar im Vorhaben."},
+  modify: {t: "Modify: Nachbesserung", role: "PPB", st: "re", ss: "mod", who: "PPB", pre: "PPB Modify: ", log: "Modify", txt: "", next: "Überarbeiten und erneut einreichen", ok: "Modify entscheiden", hint: "Die Projektleitung bessert nach und reicht erneut ein."},
+  hold: {t: "Hold: Vorhaben pausieren", role: "PPB", st: "ho", ss: "hold", who: "PPB", pre: "PPB Hold: ", log: "Hold", txt: "", next: "Hold, Wiederaufnahme durch PPB", ok: "Hold entscheiden", hint: "Das PPB kann den Hold später aufheben."},
+  kill: {t: "Kill: Vorhaben abbrechen", role: "PPB", st: "ki", ss: "kill", who: "PPB", pre: "PPB Kill: ", log: "Kill", txt: "", next: "abgebrochen", ok: "Kill entscheiden", hint: "Das Vorhaben wird beendet."}
 };
 export function reason(id, k, text) {
-  const p = byId(id), c = REASONS[k], t = (text || "").trim();
-  if (!p || !c || state.role !== c.role || p.status !== "pe" || p.stage !== (c.role === "MS" ? "ms" : "ppb")) return {error: "Aktion in dieser Rolle oder diesem Status nicht möglich"};
+  const p = byId(id), c = REASONS[k], t = (text || "").trim(), o = p && subStep(p);
+  if (!p || !c || !o || state.role !== c.role || p.status !== "pe" || p.stage !== (c.role === "MS" ? "ms" : "ppb")) return {error: "Aktion in dieser Rolle oder diesem Status nicht möglich"};
   if (!t) return {error: "Bitte eine Begründung eingeben"};
-  p.status = c.st; p.note = c.pre + t; p.next = c.next; p.stage = "ms"; p.rec = ""; p.fresh = true; logE(p, c.who, c.log + ": " + t); save();
+  stepOf(p, o.n).st = c.ss; p.status = c.st; p.note = c.pre + t; p.next = c.next; p.stage = "ms"; p.rec = ""; p.fresh = true; logE(p, c.who, stepLabel(o) + ", " + c.log + ": " + t); save();
   return {msg: c.log + ": " + p.name};
 }
 export function resume(id) {
   const p = byId(id); if (!p || state.role !== "PPB" || p.status !== "ho") return null;
+  const o = r2(p); if (o) stepOf(p, o.n).st = "sub";
   p.status = "pe"; p.stage = "ppb"; p.note = ""; p.fresh = true; logE(p, "PPB", "Hold aufgehoben, erneute Entscheidung"); save(); return "Hold aufgehoben: " + p.name;
 }
+function r2(p) { const r = compute(p.c); return r.ok ? r.order.find(o => stepOf(p, o.n).st === "hold") || null : null; }
 export function setRole(r) { if (hasK(ROLES, r)) { state.role = r; save(); } }
 export function setTheme(t) { if (["dark", "light", "auto"].includes(t)) { state.theme = t; save(); } }
 export function queue() { return state.P.filter(p => p.status === "pe"); }
@@ -139,8 +180,8 @@ export function importJSON(text) {
 export const exportJSON = () => JSON.stringify({version: 1, P: state.P, seq: state.seq}, null, 2);
 function cell(v) { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 export function csvRoadmap(list) {
-  const hd = ["ID", "Vorhaben", "Product Center", "Projektleitung", "zugeordneter PEP-Pfad", "Reviews", "zuletzt freigegebener Meilenstein", "nächster geplanter Meilenstein", "Termin", "Status", "Änderungskommentar", "Konfigurationsversion"];
-  const rows = list.map(p => { const r = compute(p.c); return [p.id, p.name, p.pc, p.pl, r.path, r.ok ? r.n : "", p.last, p.next, p.date || "", STATUS[p.status][0], p.note || "", p.ver || 1]; });
+  const hd = ["ID", "Vorhaben", "Product Center", "Projektleitung", "zugeordneter PEP-Pfad", "Reviews", "zuletzt freigegebener Meilenstein", "nächster geplanter Meilenstein", "Termin", "Status", "Änderungskommentar", "Konfigurationsversion", "Schritte erledigt", "Schritte gesamt", "Nachweis-Dateien"];
+  const rows = list.map(p => { const r = compute(p.c); return [p.id, p.name, p.pc, p.pl, r.path, r.ok ? r.n : "", p.last, p.next, p.date || "", STATUS[p.status][0], p.note || "", p.ver || 1, progress(p).done, progress(p).total, Object.values(p.steps || {}).reduce((a, x) => a + x.files.length, 0)]; });
   return "﻿" + [hd, ...rows].map(r => r.map(cell).join(";")).join("\r\n");
 }
 export function nachweis(p) {
@@ -149,5 +190,7 @@ export function nachweis(p) {
     neuentwicklungsanteil: {hardware: r.hc ? p.c.hw : null, software: p.c.sw}, referenzprodukt: p.ref || null, reviews: r.ok ? r.order.map(o => o.n) : [], bausteine: r.ok ? r.on.map(m => m.t) : [],
     abgewaehlt: r.ok ? r.ab.map(m => ({baustein: m.t, begruendung: (p.c.why || {})[m.id] || null})) : [],
     freigabe: {spurFreigegeben: !!p.appr.spur, stufeUndBausteineFreigegeben: !!p.appr.stufe, zuletztFreigegeben: p.last, naechsterMeilenstein: p.next, termin: p.date || null},
-    konfigurationsversion: p.ver || 1, verlauf: p.log, datenstand: TODAY, hinweis: "Gate-Kürzel G1 bis G5 nach Studienarbeit; Abgleich mit dem Gate-Schema des Renew PEP offen."};
+    konfigurationsversion: p.ver || 1,
+    schritte: r.ok ? r.order.map(o => { const x = stepOf(p, o.n); return {schritt: stepLabel(o), status: x.st, eingereicht: x.subAt || null, entschieden: x.decided || null, nachweise: x.files.map(f => ({name: f.name, liefergegenstand: f.dv || null, groesse: f.size, sha256: f.sha, hinzugefuegt: f.at}))}; }) : [],
+    verlauf: p.log, datenstand: TODAY, hinweis: "Gate-Kürzel G1 bis G5 nach Studienarbeit; Abgleich mit dem Gate-Schema des Renew PEP offen."};
 }

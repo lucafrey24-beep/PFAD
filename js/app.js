@@ -1,9 +1,10 @@
 // PEP-App: Oberfläche, Routing, Ereignisse. Aufbau wie SATZ (ES-Module, Hash-Routing, Ereignis-Delegation über data-act).
 import {TODAY, PCS, PH, MODS, SPN, SPDESC, STATUS, ROLES, PRESETS} from "./data.js";
-import {compute, delivs, phaseOf, scopeOf, fmtD} from "./model.js";
+import {compute, delivs, phaseOf, stepDelivs, fmtD} from "./model.js";
+import * as F from "./files.js";
 import * as S from "./store.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -63,20 +64,20 @@ function render() {
 /* ---------- Vorhaben ---------- */
 function filtered() {
   const q = ui.q.trim().toLowerCase(), f = ui.filter;
-  return S.state.P.filter(p => (f === "all" || (f === "pe" && p.status === "pe") || (f === "on" && ["on", "off"].includes(p.status)) || (f === "bl" && ["bl", "re", "ho"].includes(p.status)) || (f === "mine" && p.mine)) &&
+  return S.state.P.filter(p => (f === "all" || (f === "pe" && p.status === "pe") || (f === "on" && ["on", "off"].includes(p.status)) || (f === "bl" && ["bl", "re", "ho"].includes(p.status)) || (f === "late" && S.overdue(p)) || (f === "mine" && p.mine)) &&
     (!q || (p.name + " " + p.id + " " + p.pl + " " + p.pc).toLowerCase().includes(q)));
 }
 function listRows() {
   const L = filtered();
   if (!L.length) return '<div class="empty">' + (S.state.P.length ? "Keine Vorhaben für diese Auswahl. Filter ändern oder die Suche leeren." : "Noch keine Vorhaben. Unter Neu legen Sie das erste an.") + "</div>";
-  return '<ul class="group">' + L.map(p => { const r = compute(p.c);
-    return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.id) + " · " + esc(p.pc) + " · " + esc(p.pl) + '</span><span class="s">' + stBadge(p) + (p.status === "pe" ? " · " + (p.stage === "ppb" ? "wartet auf PPB" : "wartet auf MS Gate Committee") : "") + '</span></span><span class="tr">' + pathPill(r) + '</span><span class="chev" aria-hidden="true">›</span></a></li>';
+  return '<ul class="group">' + L.map(p => { const r = compute(p.c), pr = S.progress(p), late = S.overdue(p);
+    return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.id) + " · " + esc(p.pc) + " · " + esc(p.pl) + '</span><span class="s">' + stBadge(p) + (p.status === "pe" ? " · " + esc(subLbl(p)) + ": " + (p.stage === "ppb" ? "wartet auf PPB" : "wartet auf MS Gate Committee") : "") + (late ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="s">Schritt ' + pr.done + " von " + pr.total + '</span><span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr">' + pathPill(r) + '</span><span class="chev" aria-hidden="true">›</span></a></li>';
   }).join("") + "</ul>";
 }
 function vList() {
   setBar(brand, "", roleBtn());
   view.innerHTML = '<h1 class="big">Vorhaben</h1>' + (S.backupDue() ? '<div class="note">Zeit für eine Sicherung. <a href="#/mehr">Unter Mehr exportieren</a>, damit nichts verloren geht.</div>' : "") + '<div class="fg"><label class="f sr" for="q">Suchen</label><input id="q" type="text" inputmode="search" placeholder="Suchen: Name, ID, Projektleitung" value="' + esc(ui.q) + '" autocomplete="off"></div>' +
-    seg("filter", [["all", "Alle"], ["pe", "Freigabe offen"], ["on", "Laufend"], ["bl", "Blockiert"], ["mine", "Meine"]], ui.filter) +
+    seg("filter", [["all", "Alle"], ["pe", "Freigabe offen"], ["on", "Laufend"], ["bl", "Blockiert"], ["late", "Überfällig"], ["mine", "Meine"]], ui.filter) +
     '<div id="listBody">' + listRows() + '</div><p class="foot">' + S.state.P.length + ' Vorhaben. Stand ' + fmtD(TODAY) + '.</p>';
 }
 
@@ -88,20 +89,25 @@ function vDetail(r) {
   let h = '<p class="eyebrow">' + esc(p.id) + " · " + esc(p.pc) + '</p><h1 class="big">' + esc(p.name) + '</h1><p>' + pathPill(c) + " &nbsp;" + stBadge(p) + "</p>";
   if (p.note) h += '<div class="warn">' + esc(p.note) + "</div>";
   if (p.status === "pe") {
-    h += '<div class="qitem"><h3>' + (p.stage === "ppb" ? "Wartet auf PPB-Entscheidung" : "Wartet auf Prüfung durch das MS Gate Committee") + '</h3><p class="meta">Zur Freigabe: ' + esc(scopeOf(p, c)) + (p.rec ? ". " + esc(p.rec) : "") + "</p>" + actionsFor(p) + "</div>";
+    h += '<div class="qitem"><h3>' + (p.stage === "ppb" ? "Wartet auf PPB-Entscheidung" : "Wartet auf Prüfung durch das MS Gate Committee") + '</h3><p class="meta">Zur Freigabe: ' + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + "</p>" + evLine(p) + actionsFor(p) + "</div>";
+  }
+  const ps = c.ok ? (S.subStep(p) || S.curStep(p)) : null;
+  if (ps && p.status !== "do") {
+    h += stepPanel(p, c, ps, S.canEditFiles(p, ps.n));
+    if (S.canSubmitStep(p)) h += '<button class="btn primary" data-act="stepsub" data-id="' + esc(p.id) + '">Zur Freigabe einreichen: ' + esc(S.stepLabel(ps)) + "</button>";
   }
   if (c.ok) {
     h += '<h2 class="sec">Ablauf (' + c.n + " Reviews)</h2><ol class=\"tl\">";
-    const done = p.last.split(" ")[0]; let cur = -1;
-    c.order.forEach((o, i) => { if (o.n === done || (done === "G1+2" && o.n === "G1+2")) cur = i; });
     let lastPh = -1;
     c.order.forEach((o, i) => { const ph = phaseOf(o); if (ph !== lastPh) { h += '<li class="ph">' + esc(PH[ph]) + "</li>"; lastPh = ph; }
-      h += '<li class="' + (o.rv ? "rv " : "") + (i <= cur ? "done " : "") + (p.next && (o.n === p.next.split(" ")[0]) && i > cur ? "next" : "") + '">' + esc(o.n) + (o.t ? " " + esc(o.t) : "") + (i <= cur ? "<small>freigegeben</small>" : "") + "</li>"; });
+      const x = S.stepOf(p, o.n); h += '<li class="' + (o.rv ? "rv " : "") + (x.st === "ok" ? "done " : "") + (ps && ps.n === o.n ? "next" : "") + '">' + esc(o.n) + (o.t ? " " + esc(o.t) : "") + (x.st !== "open" || x.files.length ? "<small>" + [STX[x.st] + (x.st === "ok" ? " " + dstr(x.decided) : ""), x.files.length ? x.files.length + " Datei" + (x.files.length > 1 ? "en" : "") : ""].filter(Boolean).join(" · ") + "</small>" : "") + "</li>"; });
     h += "</ol>";
+    const olds = c.order.filter(o => (!ps || o.n !== ps.n) && S.stepOf(p, o.n).files.length);
+    if (olds.length) h += '<h2 class="sec">Nachweise je Schritt</h2><div class="group" style="padding-right:0">' + olds.map(o => '<details class="dv"><summary>' + esc(S.stepLabel(o)) + " · " + S.stepOf(p, o.n).files.length + '</summary><ul class="fl">' + S.stepOf(p, o.n).files.map(f => fileRow(p, o.n, f, false)).join("") + "</ul></details>").join("") + "</div>";
   } else h += '<div class="note">Unter den Projektschwellen: Roadmap-Eintrag ohne PEP.</div>';
   h += '<h2 class="sec">Konfiguration</h2><ul class="group">' +
     row("Spur", c.ok ? c.sp + " · " + SPN[c.sp] : "–") + row("Generationsstufe", c.ok ? c.st : "–") + row("Neuentwicklungsanteil", (c.hc ? "HW " + p.c.hw + " % · " : "") + "SW " + p.c.sw + " %") +
-    row("Referenzprodukt", p.ref || "–") + row("Projektleitung", p.pl) + row("Zuletzt freigegeben", p.last) + row("Nächster Meilenstein", p.next + (p.date ? " · " + fmtD(p.date) : "")) + row("Konfigurationsversion", String(p.ver || 1)) + "</ul>";
+    row("Referenzprodukt", p.ref || "–") + row("Projektleitung", p.pl) + row("Zuletzt freigegeben", p.last) + row("Nächster Meilenstein", p.next + (p.date ? " · " + fmtD(p.date) : "")) + row("Konfigurationsversion", String(p.ver || 1)) + "</ul>" + (S.state.role === "PL" && !["li", "ki", "do"].includes(p.status) ? '<div class="card" style="margin-top:12px"><label class="f" for="pdate">Plantermin nächster Meilenstein</label><input id="pdate" type="date" data-pdate data-id="' + esc(p.id) + '" value="' + esc(p.date || "") + '"></div>' : "") + (p.cfgPending ? '<div class="warn">Konfigurationsänderung ' + esc(p.cfgPending.from) + " → " + esc(p.cfgPending.to) + " wartet auf Freigabe am nächsten Gate.</div>" : "");
   if (c.ok) {
     h += '<h2 class="sec">Bausteine</h2><ul class="group">' + c.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") +
       c.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc((p.c.why || {})[m.id] || "") + "</span></span></li>").join("") + "</ul>";
@@ -110,6 +116,22 @@ function vDetail(r) {
   if (p.log.length) h += '<h2 class="sec">Verlauf</h2><ul class="logl">' + p.log.slice().reverse().map(l => "<li><small>" + esc(l.t) + " · " + esc(l.who) + "</small><br>" + esc(l.x) + "</li>").join("") + "</ul>";
   h += '<div class="btns">' + (S.state.role === "PL" ? '<button class="btn" data-act="edit" data-id="' + esc(p.id) + '">Konfiguration ändern</button>' : "") + '<button class="btn" data-act="nachweis" data-id="' + esc(p.id) + '">Nachweis exportieren</button></div>';
   view.innerHTML = h;
+}
+const subLbl = p => { const o = S.subStep(p); return o ? S.stepLabel(o) : "–"; };
+const dstr = iso => iso ? fmtD(iso.slice(0, 10)) : "–";
+const STX = {ok: "freigegeben", sub: "eingereicht, Freigabe offen", mod: "Nachbesserung nötig", hold: "Hold", kill: "abgebrochen", open: ""};
+function evLine(p) { const o = S.subStep(p); if (!o) return ""; const n = S.stepOf(p, o.n).files.length, m = S.missingDelivs(p, o); return '<p class="meta">Nachweise: ' + n + " Datei" + (n === 1 ? "" : "en") + (m.length ? ", ohne Datei: " + esc(m.join(", ")) : ", alle Liefergegenstände belegt") + "</p>"; }
+function fileRow(p, k, f, edit) {
+  return '<li class="frow"><span class="t">' + esc(f.name) + '<span class="s">' + F.fmtSize(f.size) + " · " + dstr(f.at) + '</span></span><button class="inline-btn" data-act="dl" data-id="' + esc(p.id) + '" data-k="' + esc(k) + '" data-f="' + esc(f.id) + '" aria-label="' + esc(f.name) + ' herunterladen">Laden</button>' +
+    (edit ? '<button class="inline-btn" data-act="fdel" data-id="' + esc(p.id) + '" data-k="' + esc(k) + '" data-f="' + esc(f.id) + '" aria-label="' + esc(f.name) + ' entfernen">Entfernen</button>' : "") + "</li>";
+}
+function stepPanel(p, c, o, edit) {
+  const s = S.stepOf(p, o.n), D = stepDelivs(c, o), k = o.n, id = esc(p.id), other = s.files.filter(f => !D.includes(f.dv)), withF = D.filter(d => s.files.some(f => f.dv === d)).length;
+  const add = (i, dv, label) => '<button type="button" class="btn small" data-act="pick" data-i="' + i + '">' + label + '</button><input hidden type="file" multiple id="fi-' + i + '" data-fileinput data-id="' + id + '" data-k="' + esc(k) + '" data-dv="' + esc(dv) + '">';
+  let h = '<h2 class="sec">Nachweise: ' + esc(S.stepLabel(o)) + '</h2><div class="card"><p class="meta">' + withF + " von " + D.length + " Liefergegenständen mit Datei" + (STX[s.st] ? " · " + STX[s.st] : "") + ".</p>";
+  h += D.map((d, i) => { const L = s.files.filter(f => f.dv === d); return '<div class="dvrow"><div class="dvh"><b>' + esc(d) + '</b><span class="meta">' + (L.length ? L.length + " Datei" + (L.length > 1 ? "en" : "") : "keine Datei") + "</span></div>" + (L.length ? '<ul class="fl">' + L.map(f => fileRow(p, k, f, edit)).join("") + "</ul>" : "") + (edit ? add(i, d, "Datei hinzufügen") : "") + "</div>"; }).join("");
+  if (other.length || edit) h += '<div class="dvrow"><div class="dvh"><b>Weitere Nachweise</b><span class="meta">' + (other.length || "keine") + "</span></div>" + (other.length ? '<ul class="fl">' + other.map(f => fileRow(p, k, f, edit)).join("") + "</ul>" : "") + (edit ? add(D.length, "", "Datei hinzufügen") : "") + "</div>";
+  return h + '<p class="foot" style="margin:8px 0 0">Dateien liegen nur in diesem Browser, bis 25 MB je Datei.</p></div>';
 }
 const row = (a, b) => '<li class="row"><span class="t">' + esc(a) + '</span><span class="tr">' + esc(b) + "</span></li>";
 function actionsFor(p) {
@@ -126,7 +148,7 @@ function vQueue() {
   let h = '<h1 class="big">Freigaben</h1>';
   h += role === "PL" ? '<div class="note">Als Projektleitung reichen Sie Konfigurationen ein. Prüfen und Entscheiden geht in den Rollen MS Gate Committee und PPB (Rolle oben rechts).</div>'
     : '<div class="note">Zweistufig: Das MS Gate Committee prüft und empfiehlt, das PPB entscheidet (Go, Modify, Hold, Kill). Spur wird an G1, Stufe und Bausteine an G2 freigegeben. Bei Light zusammen an G1+2.</div>';
-  const card = p => { const c = compute(p.c); return '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + '</h3></a><p class="meta">' + esc(p.id) + " · " + esc(p.pl) + " · eingereicht " + esc(p.submitted || "–") + " · " + pathPill(c) + "</p><p class=\"meta\">Zur Freigabe: " + esc(scopeOf(p, c)) + (p.rec ? ". " + esc(p.rec) : "") + "</p>" + actionsFor(p) + "</div>"; };
+  const card = p => { const c = compute(p.c); return '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + '</h3></a><p class="meta">' + esc(p.id) + " · " + esc(p.pl) + " · eingereicht " + esc(p.submitted || "–") + " · " + pathPill(c) + "</p><p class=\"meta\">Zur Freigabe: " + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + " · wartet seit " + S.waitDays(p) + " Tag(en)</p>" + evLine(p) + actionsFor(p) + "</div>"; };
   h += '<h2 class="sec">Wartet auf mich (' + mine.length + ")</h2>" + (mine.length ? mine.map(card).join("") : '<div class="empty">Nichts zu tun. Hier erscheinen Vorhaben, sobald eine Konfiguration eingereicht ist.</div>');
   if (others.length) h += '<h2 class="sec">Bei anderen (' + others.length + ')</h2><ul class="group">' + others.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + (p.stage === "ppb" ? "wartet auf PPB" : "wartet auf MS Gate Committee") + '</span></span><span class="chev">›</span></a></li>').join("") + "</ul>";
   if (held.length) h += '<h2 class="sec">Hold (' + held.length + ')</h2><ul class="group">' + held.map(p => '<li class="row"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.note) + "</span></span>" + (role === "PPB" ? '<button class="btn small" data-act="resume" data-id="' + esc(p.id) + '">Aufheben</button>' : "") + "</li>").join("") + "</ul>";
@@ -141,7 +163,10 @@ function vCockpit() {
   if (!P.length) { view.innerHTML = '<h1 class="big">Cockpit</h1><div class="empty">Noch keine Vorhaben erfasst. Das Cockpit füllt sich, sobald unter Neu eine Konfiguration eingereicht wird. Eine Anbindung an den Roadmap Master gibt es noch nicht.</div>'; return; }
   let h = '<h1 class="big">Cockpit</h1><div class="kpis">' +
     '<div class="kpi g"><b>' + tot + '</b><span>Vorhaben mit PEP</span></div><button class="kpi" data-act="goto" data-v="#/freigaben"><b>' + S.queue().length + '</b><span>Freigabe offen</span></button>' +
-    '<div class="kpi"><b>' + (cnt("bl") + cnt("off")) + '</b><span>Blockiert oder Off Track</span></div><div class="kpi"><b>' + pep.reduce((a, x) => a + x.c.n, 0) + '</b><span>Reviews gesamt (Σ je Pfad)</span></div></div>';
+    '<div class="kpi"><b>' + (cnt("bl") + cnt("off")) + '</b><span>Blockiert oder Off Track</span></div><button class="kpi" data-act="filterlate"><b>' + P.filter(S.overdue).length + '</b><span>Überfällig (Plantermin)</span></button></div>';
+  const act = P.filter(p => !["li", "ki"].includes(p.status));
+  h += '<h2 class="sec">Fortschritt je Vorhaben</h2>' + (act.length ? '<ul class="group">' + act.map(p => { const pr = S.progress(p); return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + stBadge(p) + " · " + esc(p.next || "–") + (S.overdue(p) ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr num">' + (pr.total ? pr.done + "/" + pr.total : "–") + '</span></a></li>'; }).join("") + "</ul>" : '<div class="empty">Keine Vorhaben mit PEP.</div>');
+  const wq = S.queue(); if (wq.length) h += '<h2 class="sec">Wartet auf Freigabe</h2><ul class="group">' + wq.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(subLbl(p)) + " · " + (p.stage === "ppb" ? "beim PPB" : "beim MS Gate Committee") + '</span></span><span class="tr num">' + S.waitDays(p) + " Tag(e)</span></a></li>").join("") + "</ul>";
   h += '<h2 class="sec">Status je Product Center</h2><div class="card">';
   PCS.forEach(pc => { const L = P.filter(p => p.pc === pc && p.status !== "li"), n = L.length || 1;
     h += '<div class="hb" aria-hidden="true"><span>' + esc(pc.replace("PC ", "")) + '</span><div class="tr">' + ["on", "off", "bl", "pe", "re", "ho"].map(k => { const m = L.filter(p => p.status === k).length; return m ? '<div class="' + STATUS[k][1] + '" style="width:' + m / n * 100 + '%" title="' + esc(STATUS[k][0]) + ": " + m + '"></div>' : ""; }).join("") + "</div><b>" + L.length + "</b></div>"; });
@@ -166,7 +191,7 @@ function vMore() {
     '<h2 class="sec">Anzeige</h2>' + seg("theme", [["dark", "Dunkel"], ["light", "Hell"], ["auto", "Automatisch"]], st.theme) +
     '<p class="foot" style="margin:-6px 16px 6px">Schriftgröße</p>' + seg("fs", [[1, "A"], [1.15, "A+"], [1.3, "A++"], [1.5, "A+++"]], st.fs) +
     '<ul class="group"><li class="row"><label class="t" for="hc">Kontrast erhöhen<span class="s">Kräftigere Trennlinien und Zusatztexte</span></label><span class="sw"><input id="hc" type="checkbox" data-hc' + (st.hc ? " checked" : "") + '><span></span></span></li></ul>' +
-    '<h2 class="sec">Datensicherung</h2><ul class="group"><li><button class="row" data-act="exportjson"><span class="t">Sicherung exportieren (JSON)</span><span class="chev">›</span></button></li><li><label class="row" for="imp" style="cursor:pointer"><span class="t">Sicherung laden</span><span class="chev">›</span></label><input id="imp" type="file" accept=".json,application/json" class="sr"></li><li><button class="row" data-act="csv"><span class="t">Roadmap exportieren (CSV)</span><span class="chev">›</span></button></li>' +
+    '<h2 class="sec">Datensicherung</h2><ul class="group"><li><button class="row" data-act="exportjson"><span class="t">Sicherung exportieren (JSON)<span class="s">Ohne Nachweis-Dateien, die bleiben in diesem Browser</span></span><span class="chev">›</span></button></li><li><label class="row" for="imp" style="cursor:pointer"><span class="t">Sicherung laden</span><span class="chev">›</span></label><input id="imp" type="file" accept=".json,application/json" class="sr"></li><li><button class="row" data-act="csv"><span class="t">Roadmap exportieren (CSV)</span><span class="chev">›</span></button></li>' +
     (st.corrupt && S.corruptRaw() ? '<li><button class="row" data-act="defekt"><span class="t">Beschädigte Daten herunterladen<span class="s">Der Speicher war nicht lesbar und wurde beiseitegelegt.</span></span><span class="chev">›</span></button></li>' : "") +
     '<li><button class="row" data-act="wipe"><span class="t"><b>Alle Daten löschen</b><span class="s">Danach ist die App leer</span></span><span class="chev">›</span></button></li></ul>' +
     '<p class="foot">Alle Daten liegen nur in diesem Browser (localStorage). Geräte teilen nichts. Für gemeinsame Nutzung wäre ein Server mit Anmeldung nötig.</p>' +
@@ -178,7 +203,7 @@ function vRules() {
 }
 function vOpen() {
   setBar(back("#/mehr", "Mehr"), "Offene Fragen", roleBtn());
-  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Welches gilt für die Anzeige?", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Wer entscheidet im PPB, und wie wird der Entscheid dokumentiert?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wie werden Reviews je Pfad für die Ressourcenplanung gezählt?", "Bleiben Gate-Termine in der App oder kommen sie aus der Roadmap?"];
+  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Welches gilt für die Anzeige?", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Wer entscheidet im PPB, und wie wird der Entscheid dokumentiert?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wie werden Reviews je Pfad für die Ressourcenplanung gezählt?", "Wer entscheidet bei Review-Meilensteinen (Design Freeze, Serienfreigabe, Pilotfreigabe)? Die App nutzt wie bei Gates: MS Gate Committee prüft, PPB entscheidet.", "Welche Nachweise sind je Liefergegenstand Pflicht, und wo liegen die Dateien produktiv? Aktuell nur lokal im Browser.", "Bleiben Gate-Termine in der App oder kommen sie aus der Roadmap?"];
   view.innerHTML = '<h1 class="big">Offene Fragen</h1><ul class="group">' + Q.map((q, i) => '<li class="row"><span class="t"><span class="s">Frage ' + (i + 1) + "</span>" + esc(q) + "</span></li>").join("") + "</ul>";
 }
 
@@ -236,6 +261,12 @@ document.addEventListener("click", e => {
   const done = m => { if (m) toast(m); render(); };
   switch (a) {
     case "close": closeDlg(); break;
+    case "filterlate": ui.filter = "late"; location.hash = "#/vorhaben"; break;
+    case "pick": document.getElementById("fi-" + el.dataset.i)?.click(); break;
+    case "dl": getBlob(el.dataset.f, el.dataset.id, el.dataset.k); break;
+    case "fdel": removeFile(el.dataset.id, el.dataset.k, el.dataset.f); break;
+    case "stepsub": { const p = S.byId(id), o = S.curStep(p), m = S.missingDelivs(p, o); openDlg('<h2 id="dlg-h">Zur Freigabe einreichen</h2><p class="meta">' + esc(S.stepLabel(o)) + " · " + esc(p.name) + "</p>" + (m.length ? '<div class="warn"><b>Ohne Datei:</b> ' + esc(m.join(", ")) + ". Das MS Gate Committee sieht diese Lücke.</div>" : '<div class="note">Alle Liefergegenstände haben mindestens eine Datei.</div>') + '<label class="f" for="snote">Kommentar an das MS Gate Committee (optional)</label><textarea id="snote" maxlength="400"></textarea><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="stepsubok" data-id="' + esc(id) + '">Einreichen</button></div>'); break; }
+    case "stepsubok": { const snap = S.snapshot(), res = S.submitStep(id, $("#snote").value); closeDlg(); if (res.error) toast(res.error); else { toast(res.msg, () => { S.restore(snap); render(); }); render(); } break; }
     case "help": openDlg(helpHtml()); break;
     case "filter": ui.filter = el.dataset.v; vList(); break;
     case "role": S.setRole(el.dataset.v); render(); break;
@@ -270,6 +301,8 @@ document.addEventListener("click", e => {
 document.addEventListener("change", e => {
   const t = e.target, d = S.state.draft;
   if (t.dataset.mod && d) { const m = MODS.find(x => x.id === t.dataset.mod), r = compute(d.c); if (m.ty === "spur") { d.c.sel = d.c.sel || {}; d.c.sel[m.id] = t.checked; } else d.c.opt[m.id] = t.checked ? 1 : 0; S.save(); vWizard(); return; }
+  if (t.dataset.pdate !== undefined) { S.setDate(t.dataset.id, t.value); toast("Plantermin gespeichert"); return; }
+  if (t.dataset.fileinput !== undefined) { addFiles(t); return; }
   if (t.dataset.f && d) { d[t.dataset.f] = t.value; S.save(); return; }
   if (t.dataset.stepin && d) { setPct(t.dataset.stepin, parseInt(t.value, 10) || 0, true); return; }
   if (t.dataset.hc !== undefined) { S.setHc(t.checked); applyTheme(); return; }
@@ -299,6 +332,24 @@ function report() {
   return '<h2 id="dlg-h">Monatsreport ' + fmtD(TODAY) + '</h2><p class="meta">Aus den hier erfassten Vorhaben erzeugt.</p><ul class="group">' + row("Vorhaben mit PEP", String(P.filter(p => p.status !== "li" && p.status !== "ki").length)) + row("On Track", String(n("on"))) + row("Off Track", String(n("off"))) + row("Blockiert", String(n("bl"))) + row("Freigabe offen", String(n("pe"))) + "</ul>" +
     (bl.length ? '<h2 class="sec">Aufmerksamkeit</h2><ul class="group">' + bl.map(p => '<li class="row"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.note || STATUS[p.status][0]) + "</span></span></li>").join("") + "</ul>" : "") + '<button class="btn" style="margin-top:16px" data-act="close">Schließen</button>';
 }
+
+/* ---------- Nachweis-Dateien ---------- */
+function keepScroll(fn) { const y = view.scrollTop; fn(); view.scrollTop = y; }
+async function addFiles(inp) {
+  const id = inp.dataset.id, k = inp.dataset.k, dv = inp.dataset.dv, files = [...inp.files]; inp.value = ""; let n = 0, err = "";
+  for (const f of files) {
+    if (f.size > F.MAX) { err = f.name + " ist größer als 25 MB"; continue; }
+    try { const fid = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)), sha = await F.sha256(f); await F.putFile(fid, f); S.addFileMeta(id, k, {id: fid, name: f.name.slice(0, 120), size: f.size, type: f.type || "", at: new Date().toISOString(), dv, sha}); n++; }
+    catch (e) { err = "Datei konnte nicht gespeichert werden (Speicher voll oder gesperrt)"; }
+  }
+  toast(err ? (n ? n + " gespeichert. " : "") + err : n + (n === 1 ? " Datei hinzugefügt" : " Dateien hinzugefügt"));
+  keepScroll(() => vDetail(route()));
+}
+async function getBlob(fid, id, k) {
+  try { const b = await F.getFile(fid); const m = S.byId(id)?.steps[k]?.files.find(f => f.id === fid); if (!b) { toast("Die Datei liegt nicht in diesem Browser (andere Geräte oder Sicherung sehen nur den Eintrag)."); return; } const u = URL.createObjectURL(b), a = document.createElement("a"); a.href = u; a.download = m ? m.name : "nachweis"; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); }
+  catch (e) { toast("Datei konnte nicht gelesen werden"); }
+}
+async function removeFile(id, k, fid) { const f = S.removeFileMeta(id, k, fid); if (f) { try { await F.delFile(fid); } catch (e) { /* Eintrag ist weg, Rest egal */ } toast("Entfernt: " + f.name); keepScroll(() => vDetail(route())); } }
 
 /* ---------- Tastatur (PC) ---------- */
 function helpHtml() {

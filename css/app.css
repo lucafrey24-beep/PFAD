@@ -236,3 +236,10 @@ kbd{font:inherit;font-size:.82rem;font-weight:600;border:1px solid var(--sep);bo
   .seg button[aria-pressed="true"],.tabs a[aria-current="page"]{outline:2px solid Highlight}
   .sw span{border:1px solid CanvasText}
 }
+
+/* Schritte, Nachweise, Fortschritt */
+.pb{display:block;height:6px;border-radius:3px;background:var(--fill-2);margin-top:6px;overflow:hidden}.pb i{display:block;height:100%;background:var(--btn);border-radius:3px}
+.dvrow{padding:12px 0;border-bottom:.5px solid var(--sep)}.dvrow:last-of-type{border-bottom:0}
+.dvh{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:6px}
+.fl{list-style:none;margin:0 0 8px;padding:0}.frow{display:flex;align-items:center;gap:6px;padding:6px 0}.frow .t{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.92rem}.frow .s{display:block;color:var(--label-2);font-size:.76rem}
+details.dv .fl{margin:6px 0 4px 0}

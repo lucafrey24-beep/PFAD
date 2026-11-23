@@ -28,9 +28,14 @@ export function compute(c) {
   gates.push({n: "G4", t: "Produktfreigabe", x: 4}, {n: "G5", t: "Projektabschluss", x: 5});
   const on = MODS.filter(isOn);
   const ab = MODS.filter(m => m.ty === "spur" && avail(m) && defOn(m) && !isOn(m));
-  const rv = on.filter(m => m.rv).map(m => ({n: m.rv.n, t: m.t, x: m.ph + m.rv.p, r: m.rv.r, rv: 1}));
+  const rv = on.filter(m => m.rv).map(m => ({n: m.rv.n, t: m.t, x: m.ph + m.rv.p, r: m.rv.r, rv: 1, mid: m.id}));
   const order = [...gates, ...rv].sort((a, b) => a.x - b.x);
   return {ok, sp, hc, st, light, avail, defOn, isOn, gates, rv, order, on, ab, n: ok ? order.length : 0, path: ok ? sp + "-" + st : "ohne PEP"};
+}
+// Liefergegenstände eines Schritts: bei Gates die der Phase, bei Review-Meilensteinen der Baustein, der den Review auslöst
+export function stepDelivs(r, o) {
+  if (o.mid) { const b = MODS.find(x => x.id === o.mid); return b ? [b.d] : []; }
+  const d = delivs(r)[phaseOf(o)]; return d && !d.gone ? d.items.map(i => i.t) : [];
 }
 export const phaseOf = o => Math.min(4, Math.max(0, Math.ceil(o.x) - 1));
 

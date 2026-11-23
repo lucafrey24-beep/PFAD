@@ -243,3 +243,5 @@ kbd{font:inherit;font-size:.82rem;font-weight:600;border:1px solid var(--sep);bo
 .dvh{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:6px}
 .fl{list-style:none;margin:0 0 8px;padding:0}.frow{display:flex;align-items:center;gap:6px;padding:6px 0}.frow .t{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.92rem}.frow .s{display:block;color:var(--label-2);font-size:.76rem}
 details.dv .fl{margin:6px 0 4px 0}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chipb{min-height:44px;padding:0 14px;border-radius:22px;border:1px solid var(--sep);background:transparent;color:var(--label);font:inherit;font-size:.86rem;cursor:pointer}.chipb[aria-pressed=true]{background:var(--btn);border-color:var(--btn);color:#fff}.chipb:focus-visible{outline:3px solid var(--btn);outline-offset:2px}

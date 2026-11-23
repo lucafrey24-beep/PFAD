@@ -9,3 +9,4 @@ export const delFile = id => tx("readwrite", s => s.delete(id));
 export async function sha256(blob) { const h = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()); return [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, "0")).join(""); }
 export const MAX = 25 * 1024 * 1024;
 export const fmtSize = n => n < 1024 ? n + " B" : n < 1048576 ? Math.round(n / 1024) + " KB" : (n / 1048576).toFixed(1).replace(".", ",") + " MB";
+export const clearAll = () => tx("readwrite", s => s.clear());

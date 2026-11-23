@@ -1,10 +1,11 @@
 // PEP-App: Oberfläche, Routing, Ereignisse. Aufbau wie SATZ (ES-Module, Hash-Routing, Ereignis-Delegation über data-act).
-import {TODAY, PCS, PH, MODS, SPN, SPDESC, STATUS, ROLES, PRESETS} from "./data.js";
+import {TODAY, PCS, PH, SPN, SPDESC, STATUS, ROLES, PRESETS} from "./data.js";
 import {compute, delivs, phaseOf, stepDelivs, fmtD} from "./model.js";
 import * as F from "./files.js";
+import * as RW from "./rules.js";
 import * as S from "./store.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -55,7 +56,7 @@ function render() {
   const idx = Math.max(0, TABS.indexOf(r.tab === "vorhaben" || TABS.includes(r.tab) ? r.tab : "vorhaben"));
   tabs.querySelector(".pill").style.transform = "translateX(" + idx * 100 + "%)";
   tabs.querySelectorAll("a").forEach((a, i) => i === idx ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
-  const fn = {vorhaben: r.id ? vDetail : vList, neu: vWizard, freigaben: vQueue, cockpit: vCockpit, mehr: r.id === "regeln" ? vRules : r.id === "offen" ? vOpen : vMore}[r.tab] || vList;
+  const fn = {vorhaben: r.id ? vDetail : vList, neu: vWizard, freigaben: vQueue, cockpit: vCockpit, mehr: r.id === "regeln" ? vRules : r.id === "offen" ? vOpen : r.id === "regelwerk" ? vRegel : vMore}[r.tab] || vList;
   fn(r); view.scrollTop = 0;
   const h = view.querySelector("h1"); if (h) { h.tabIndex = -1; h.focus({preventScroll: true}); document.title = h.textContent + " – PFAD"; }
   collapse();
@@ -111,7 +112,7 @@ function vDetail(r) {
   if (c.ok) {
     h += '<h2 class="sec">Bausteine</h2><ul class="group">' + c.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") +
       c.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc((p.c.why || {})[m.id] || "") + "</span></span></li>").join("") + "</ul>";
-    h += '<h2 class="sec">Liefergegenstände je Phase</h2><div class="group" style="padding-right:0">' + delivs(c).map(d => d.gone ? "" : '<details class="dv"><summary>' + esc(d.t) + '</summary><ul>' + d.items.map(i => '<li class="' + (i.bs ? "bs" : "") + '">' + esc(i.t) + (i.bs ? " (Baustein)" : "") + "</li>").join("") + "</ul></details>").join("") + "</div>";
+    h += '<h2 class="sec">Liefergegenstände je Phase</h2><div class="group" style="padding-right:0">' + delivs(c).map(d => d.gone ? "" : '<details class="dv"><summary>' + esc(d.t) + '</summary><ul>' + d.items.map(i => '<li class="' + (i.bs ? "bs" : "") + '">' + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") + "</ul></details>").join("") + "</div>";
   }
   if (p.log.length) h += '<h2 class="sec">Verlauf</h2><ul class="logl">' + p.log.slice().reverse().map(l => "<li><small>" + esc(l.t) + " · " + esc(l.who) + "</small><br>" + esc(l.x) + "</li>").join("") + "</ul>";
   h += '<div class="btns">' + (S.state.role === "PL" ? '<button class="btn" data-act="edit" data-id="' + esc(p.id) + '">Konfiguration ändern</button>' : "") + '<button class="btn" data-act="nachweis" data-id="' + esc(p.id) + '">Nachweis exportieren</button></div>';
@@ -187,13 +188,13 @@ function vCockpit() {
 function vMore() {
   setBar(brand, "", roleBtn());
   const st = S.state;
-  view.innerHTML = '<h1 class="big">Mehr</h1><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter, keine Anmeldung.</p></div>' +
+  view.innerHTML = '<h1 class="big">Mehr</h1><ul class="group"><li><a class="row" href="#/mehr/regelwerk"><span class="t">Regelwerk<span class="s">Gates, Liefergegenstände, Schwellen und Bausteine selbst hinterlegen' + (RW.isDefault() ? "" : " · angepasst") + '</span></span><span class="chev">›</span></a></li><li><button class="row" data-act="reset"><span class="t"><b>Alles zurücksetzen</b><span class="s">Vorhaben, Nachweis-Dateien und Entwurf löschen, App startet leer (z. B. für eine Vorführung)</span></span><span class="chev">›</span></button></li></ul><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter, keine Anmeldung.</p></div>' +
     '<h2 class="sec">Anzeige</h2>' + seg("theme", [["dark", "Dunkel"], ["light", "Hell"], ["auto", "Automatisch"]], st.theme) +
     '<p class="foot" style="margin:-6px 16px 6px">Schriftgröße</p>' + seg("fs", [[1, "A"], [1.15, "A+"], [1.3, "A++"], [1.5, "A+++"]], st.fs) +
     '<ul class="group"><li class="row"><label class="t" for="hc">Kontrast erhöhen<span class="s">Kräftigere Trennlinien und Zusatztexte</span></label><span class="sw"><input id="hc" type="checkbox" data-hc' + (st.hc ? " checked" : "") + '><span></span></span></li></ul>' +
     '<h2 class="sec">Datensicherung</h2><ul class="group"><li><button class="row" data-act="exportjson"><span class="t">Sicherung exportieren (JSON)<span class="s">Ohne Nachweis-Dateien, die bleiben in diesem Browser</span></span><span class="chev">›</span></button></li><li><label class="row" for="imp" style="cursor:pointer"><span class="t">Sicherung laden</span><span class="chev">›</span></label><input id="imp" type="file" accept=".json,application/json" class="sr"></li><li><button class="row" data-act="csv"><span class="t">Roadmap exportieren (CSV)</span><span class="chev">›</span></button></li>' +
     (st.corrupt && S.corruptRaw() ? '<li><button class="row" data-act="defekt"><span class="t">Beschädigte Daten herunterladen<span class="s">Der Speicher war nicht lesbar und wurde beiseitegelegt.</span></span><span class="chev">›</span></button></li>' : "") +
-    '<li><button class="row" data-act="wipe"><span class="t"><b>Alle Daten löschen</b><span class="s">Danach ist die App leer</span></span><span class="chev">›</span></button></li></ul>' +
+    '</ul>' +
     '<p class="foot">Alle Daten liegen nur in diesem Browser (localStorage). Geräte teilen nichts. Für gemeinsame Nutzung wäre ein Server mit Anmeldung nötig.</p>' +
     '<h2 class="sec">Über</h2><ul class="group"><li><button class="row" data-act="help"><span class="t">Tastenkürzel</span><span class="chev">›</span></button></li><li><a class="row" href="#/mehr/regeln"><span class="t">Regeln und Quellen</span><span class="chev">›</span></a></li><li><a class="row" href="#/mehr/offen"><span class="t">Offene Fragen</span><span class="chev">›</span></a></li>' + row("Version", VERSION) + row("Modell", "Studienarbeit T3100, Kap. 5.7") + "</ul>";
 }
@@ -235,7 +236,7 @@ function vWizard() {
       (r.hc ? "" : '<p class="foot" style="margin:8px 0 0">Ohne Hardwareänderung zählt nur der Softwareanteil.</p>') +
 '<div class="lvl" id="lvl">' + lvl(r) + '</div></div><div class="card"><div class="fg" style="margin:0"><label class="f" for="w-ref2">Referenzprodukt</label><input id="w-ref2" data-f="ref" type="text" value="' + esc(w.ref) + '" maxlength="80"><p class="foot" style="margin:6px 0 0">Bei Standard und Light wird der Abgleich mit dem Referenzprodukt als Baustein vorgeschlagen.</p></div></div>';
   } else if (w.step === 4) {
-    const pool = MODS.filter(m => r.avail(m));
+    const pool = RW.mods().filter(m => r.avail(m));
     const sw = (m, on, dis) => '<span class="sw"><input type="checkbox" data-mod="' + m.id + '"' + (on ? " checked" : "") + (dis ? " disabled" : "") + ' aria-label="' + esc(m.t) + '"><span></span></span>';
     h += '<p class="meta">Der Pflichtkern ist fest. Vorgeschlagene Bausteine lassen sich nur mit Begründung abwählen.</p><ul class="group">' +
       pool.map(m => { const on = r.isOn(m), fixed = m.ty === "stufe", abw = m.ty === "spur" && !on;
@@ -245,14 +246,43 @@ function vWizard() {
     h += '<div class="spur"><div class="L">' + r.sp + '</div><div><b>' + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + esc(w.name || "Ohne Namen") + " · " + esc(w.pc) + "</p></div></div>";
     if (r.ok) { let lp = -1; h += '<h2 class="sec">Ablauf</h2><ol class="tl">'; r.order.forEach(o => { const ph = phaseOf(o); if (ph !== lp) { h += '<li class="ph">' + esc(PH[ph]) + "</li>"; lp = ph; } h += '<li class="' + (o.rv ? "rv" : "") + '">' + esc(o.n) + (o.t ? " " + esc(o.t) : "") + "</li>"; }); h += "</ol>";
       h += '<h2 class="sec">Bausteine</h2><ul class="group">' + r.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") + r.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc(c.why[m.id] || "Begründung fehlt") + "</span></span></li>").join("") + "</ul>"; }
+    if (r.ok) h += '<h2 class="sec">Liefergegenstände (' + esc(r.proc) + ')</h2><div class="group" style="padding-right:0">' + delivs(r).map(x => x.gone ? "" : '<details class="dv"><summary>' + esc(x.t) + " · " + x.items.length + '</summary><ul>' + (x.items.length ? x.items.map(i => "<li>" + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt. Im Regelwerk ergänzen.</li>") + "</ul></details>").join("") + "</div>";
     h += '<p class="foot">' + (S.state.role === "PL" ? "Nach dem Einreichen prüft das MS Gate Committee, das PPB entscheidet." : "Einreichen ist nur in der Rolle Projektleitung möglich.") + "</p>";
   }
   h += '<div class="actionbar">' + (w.step ? '<button class="btn back" data-act="wizprev">Zurück</button>' : "") + (w.step < 5 ? '<button class="btn primary" data-act="wiznext">Weiter</button>' : '<button class="btn primary" data-act="wizsubmit"' + (S.state.role === "PL" ? "" : " disabled") + ">Einreichen</button>") + "</div>";
   view.innerHTML = h;
 }
 const stepper = (k, l, v, dis) => '<div class="step"><div class="lab">' + l + '</div><div class="ctl"><button type="button" data-hold="' + k + '" data-d="-5" aria-label="' + l + ' verringern"' + (dis ? " disabled" : "") + '>−</button><input type="text" inputmode="numeric" id="in-' + k + '" data-stepin="' + k + '" value="' + v + '" aria-label="' + l + ' in Prozent"' + (dis ? " disabled" : "") + '><b>%</b><button type="button" data-hold="' + k + '" data-d="5" aria-label="' + l + ' erhöhen"' + (dis ? " disabled" : "") + ">+</button></div></div>";
-const lvl = r => ["Full", "Standard", "Light"].map(s => '<div class="' + (r.st === s ? "on" : "") + '"><b>' + s + "</b>" + (s === "Full" ? "ab 60 %" : s === "Light" ? "bis 20 %" : "dazwischen") + "</div>").join("");
+const lvl = r => ["Full", "Standard", "Light"].map(s => '<div class="' + (r.st === s ? "on" : "") + '"><b>' + s + "</b>" + (s === "Full" ? "ab " + RW.rules().thr.full + " %" : s === "Light" ? "bis " + RW.rules().thr.light + " %" : "dazwischen") + "</div>").join("");
 function wizGo(n) { const w = S.state.draft; w.step = n; ui.wizErr = ""; S.save(); vWizard(); view.scrollTop = 0; }
+
+
+/* ---------- Regelwerk ---------- */
+ui.rwGate = "G2"; ui.rwPrev = "0";
+const chip = (on, act, attrs, l) => '<button type="button" class="chipb" data-act="' + act + '" ' + attrs + ' aria-pressed="' + on + '">' + esc(l) + "</button>";
+function vRegel() {
+  setBar(back("#/mehr", "Mehr"), "Regelwerk", roleBtn());
+  const R = RW.rules(), g = ui.rwGate, its = R.items.filter(i => i.gate === g), STU = ["Full", "Standard", "Light"], SPS = [["A", "Spur A"], ["Bh", "Spur B mit Hardware"], ["B", "Spur B ohne Hardware"], ["C", "Spur C"]];
+  let h = '<h1 class="big">Regelwerk</h1><div class="note">Hier legst du fest, welche Liefergegenstände je Gate gelten. Änderungen wirken sofort auf alle Vorhaben und gelten nur in diesem Browser.</div>' + (R.items.some(i => i.src === "Renew PEP") ? "" : '<div class="warn">Es sind nur die Kernpunkte der Studienarbeit hinterlegt. Unter Werkzeuge die Product-Governance-CSV importieren oder Liefergegenstände selbst anlegen.</div>');
+  h += '<h2 class="sec">Schwellen Generationsstufe</h2><div class="card"><div class="fg"><label class="f" for="rw-l">Light bis (% Neuentwicklung)</label><input id="rw-l" type="number" min="0" max="99" inputmode="numeric" data-rw="thr" data-k="light" value="' + R.thr.light + '"></div><div class="fg" style="margin:0"><label class="f" for="rw-f">Full ab (% Neuentwicklung)</label><input id="rw-f" type="number" min="1" max="100" inputmode="numeric" data-rw="thr" data-k="full" value="' + R.thr.full + '"></div><p class="foot" style="margin:8px 0 0">Annahme aus der Studienarbeit: 20 % und 60 %.</p></div>';
+  h += '<h2 class="sec">Prozess je Spur</h2><div class="card">' + SPS.map(([k, l]) => '<div class="fg"><label class="f" for="rw-p' + k + '">' + l + '</label><select id="rw-p' + k + '" data-rw="proc" data-k="' + k + '">' + ["Device", "Digital"].map(p => '<option' + (R.proc[k] === p ? " selected" : "") + ">" + p + "</option>").join("") + "</select></div>").join("") + '<p class="foot" style="margin:0">Bestimmt, ob die Device- oder die Digital-Liefergegenstände gelten.</p></div>';
+  h += '<h2 class="sec">Gates der App und ihre Quelle</h2><div class="card"><p class="meta">Welche Gates des Renew PEP (G1 bis G8) fließen in welches App-Gate ein?</p>' + ["G1", "G2", "G3", "G4", "G5"].map(k => '<div class="dvrow"><div class="dvh"><b>App-Gate ' + k + '</b></div><div class="chips">' + RW.GATE_IDS.map(x => chip(R.gateMap[k].includes(x), "rwmap", 'data-g="' + k + '" data-v="' + x + '"', x)).join("") + "</div></div>").join("") + "</div>";
+  h += '<h2 class="sec">Liefergegenstände je Renew-Gate</h2>' + seg("rwgate", RW.GATE_IDS.map(x => [x, x]), g);
+  h += '<div class="card"><div class="fg"><label class="f" for="rw-gn">Name von ' + g + '</label><input id="rw-gn" type="text" maxlength="60" data-rw="gname" data-g="' + g + '" value="' + esc(R.gates[g]) + '"></div><p class="meta">' + its.length + " Liefergegenstände in " + g + "</p>" +
+    its.map(i => '<div class="dvrow"><label class="f sr" for="in-' + i.id + '">Name</label><input id="in-' + i.id + '" type="text" maxlength="120" data-rw="iname" data-id="' + i.id + '" value="' + esc(i.name) + '"><div class="chips">' +
+      ["Device", "Digital"].map(p => chip(i.proc.includes(p), "rwchip", 'data-id="' + i.id + '" data-k="proc" data-v="' + p + '"', p)).join("") + STU.map(s => chip(i.stufen.includes(s), "rwchip", 'data-id="' + i.id + '" data-k="stufen" data-v="' + s + '"', s)).join("") + chip(i.kat === "A", "rwkat", 'data-id="' + i.id + '"', "Validieren statt neu") +
+      '</div><p class="meta">' + esc(i.src || "") + (i.quellen ? " · " + i.quellen.length + " Quellzeilen" : "") + '</p>' + (i.quellen ? '<details class="dv"><summary>Quellzeilen anzeigen</summary><ul>' + i.quellen.map(q => "<li>" + esc(q.ms) + ": " + esc(q.name) + " <small>" + esc(q.id) + "</small></li>").join("") + "</ul></details>" : "") +
+      '<button class="inline-btn" data-act="rwdel" data-id="' + i.id + '" aria-label="' + esc(i.name) + ' löschen">Löschen</button></div>').join("") +
+    '<button class="btn" data-act="rwadd" data-g="' + g + '">Liefergegenstand hinzufügen</button></div>';
+  h += '<h2 class="sec">Bausteine</h2><div class="card">' + RW.mods().map(m => '<div class="dvrow"><div class="fg"><label class="f" for="rm-t-' + m.id + '">Baustein, ' + esc(PH[m.ph]) + '</label><input id="rm-t-' + m.id + '" type="text" maxlength="80" data-rw="mod" data-k="t" data-id="' + m.id + '" value="' + esc(m.t) + '"></div><div class="fg" style="margin:0"><label class="f" for="rm-d-' + m.id + '">Liefergegenstand</label><input id="rm-d-' + m.id + '" type="text" maxlength="120" data-rw="mod" data-k="d" data-id="' + m.id + '" value="' + esc(m.d) + '"></div></div>').join("") + "</div>";
+  const pr = PRESETS[+ui.rwPrev], pw = S.wizFromPreset(+ui.rwPrev), pc = compute(pw.c), dv = delivs(pc);
+  h += '<h2 class="sec">Vorschau je Referenzfall</h2>' + seg("rwprev", PRESETS.map((p, i) => [i, p.n]), ui.rwPrev) + '<div class="card"><p class="meta">' + esc(pc.path) + " · Prozess " + esc(pc.proc) + " · " + pc.n + " Reviews</p>" + dv.map(x => x.gone ? "" : '<details class="dv"><summary>' + esc(x.t) + " · " + x.items.length + "</summary><ul>" + (x.items.length ? x.items.map(i => "<li>" + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt</li>") + "</ul></details>").join("") + "</div>";
+  h += '<h2 class="sec">Werkzeuge</h2><ul class="group"><li><button class="row" data-act="rwpick" data-i="rwcsv"><span class="t">Quell-CSV importieren<span class="s">Product-Governance-Tabelle, wird nur im Browser gelesen und ergänzt Quellzeilen</span></span><span class="chev">›</span></button></li>' +
+    '<li><button class="row" data-act="rwexp"><span class="t">Regelwerk exportieren (JSON)</span><span class="chev">›</span></button></li><li><button class="row" data-act="rwpick" data-i="rwjson"><span class="t">Regelwerk importieren (JSON)</span><span class="chev">›</span></button></li>' +
+    '<li><button class="row" data-act="rwreset"><span class="t"><b>Regelwerk auf Standard zurücksetzen</b></span><span class="chev">›</span></button></li></ul><input hidden type="file" id="rwcsv" accept=".csv,text/csv"><input hidden type="file" id="rwjson" accept="application/json,.json">';
+  view.innerHTML = h;
+}
+const rwRender = () => { const y = view.scrollTop; vRegel(); view.scrollTop = y; };
 
 /* ---------- Ereignisse ---------- */
 document.addEventListener("click", e => {
@@ -260,6 +290,17 @@ document.addEventListener("click", e => {
   const a = el.dataset.act, id = el.dataset.id, d = S.state.draft;
   const done = m => { if (m) toast(m); render(); };
   switch (a) {
+    case "rwgate": ui.rwGate = el.dataset.v; rwRender(); break;
+    case "rwprev": ui.rwPrev = el.dataset.v; rwRender(); break;
+    case "rwmap": RW.edit(R => { const l = R.gateMap[el.dataset.g], v = el.dataset.v; R.gateMap[el.dataset.g] = l.includes(v) ? l.filter(x => x !== v) : [...l, v].sort(); }); rwRender(); break;
+    case "rwchip": RW.edit(R => { const i = R.items.find(x => x.id === el.dataset.id); if (!i) return; const l = i[el.dataset.k], v = el.dataset.v; i[el.dataset.k] = l.includes(v) ? l.filter(x => x !== v) : [...l, v]; }); rwRender(); break;
+    case "rwkat": RW.edit(R => { const i = R.items.find(x => x.id === el.dataset.id); if (i) i.kat = i.kat === "A" ? "D" : "A"; }); rwRender(); break;
+    case "rwadd": { const nid = RW.addItem(el.dataset.g); rwRender(); document.getElementById("in-" + nid)?.focus(); document.getElementById("in-" + nid)?.select(); break; }
+    case "rwdel": { const snap = JSON.stringify(RW.rules()); RW.edit(R => { R.items = R.items.filter(x => x.id !== el.dataset.id); }); rwRender(); toast("Liefergegenstand gelöscht", () => { RW.importRules(snap); rwRender(); }); break; }
+    case "rwpick": document.getElementById(el.dataset.i)?.click(); break;
+    case "rwexp": download("PFAD-Regelwerk-" + TODAY + ".json", RW.exportRules(), "application/json"); toast("Regelwerk exportiert"); break;
+    case "rwreset": openDlg('<h2 id="dlg-h">Regelwerk zurücksetzen?</h2><p class="meta">Alle eigenen Änderungen an Schwellen, Gates, Liefergegenständen und Bausteinen gehen verloren. Vorhaben bleiben erhalten.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="rwresetok">Zurücksetzen</button></div>'); break;
+    case "rwresetok": RW.resetRules(); closeDlg(); toast("Regelwerk auf Standard"); rwRender(); break;
     case "close": closeDlg(); break;
     case "filterlate": ui.filter = "late"; location.hash = "#/vorhaben"; break;
     case "pick": document.getElementById("fi-" + el.dataset.i)?.click(); break;
@@ -284,6 +325,8 @@ document.addEventListener("click", e => {
     case "exportjson": download("PFAD-Sicherung-" + TODAY + ".json", S.exportJSON(), "application/json"); S.markBackup(); toast("Sicherung exportiert"); break;
     case "defekt": download("PFAD-beschaedigt.json", S.corruptRaw(), "application/json"); break;
     case "fs": S.setFs(+el.dataset.v); applyTheme(); vMore(); break;
+    case "reset": openDlg('<h2 id="dlg-h">Alles zurücksetzen?</h2><p class="meta">Alle Vorhaben, hochgeladene Nachweis-Dateien und der Entwurf werden gelöscht. Das lässt sich nicht rückgängig machen.</p><div class="row"><label class="t" for="rr">Regelwerk auch auf Standard setzen (entfernt importierte Inhalte)</label><span class="sw"><input id="rr" type="checkbox"><span></span></span></div><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="resetok">Zurücksetzen</button></div>'); break;
+    case "resetok": { const rr = $("#rr")?.checked; S.resetAll(); F.clearAll().catch(() => {}); if (rr) RW.resetRules(); applyTheme(); closeDlg(); toast("Zurückgesetzt, die App ist leer"); location.hash = "#/vorhaben"; render(); break; }
     case "wipe": openDlg('<h2 id="dlg-h">Alle Daten löschen?</h2><p class="meta">Alle Vorhaben, der Entwurf und die Einstellungen gehen verloren. Zur Bestätigung LÖSCHEN eintippen.</p><label class="f sr" for="wipe-in">Bestätigung</label><input id="wipe-in" type="text" autocomplete="off" autocapitalize="characters" placeholder="LÖSCHEN"><p class="err" id="werr" hidden>Bitte genau LÖSCHEN eintippen.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn destructive" data-main data-act="wipeok">Löschen</button></div>'); setTimeout(() => $("#wipe-in")?.focus(), 50); break;
     case "wipeok": if ($("#wipe-in").value.trim() !== "LÖSCHEN") { $("#werr").hidden = false; break; } S.resetAll(); applyTheme(); closeDlg(); toast("Alle Daten gelöscht"); location.hash = "#/vorhaben"; render(); break;
     case "report": openDlg(report()); break;
@@ -300,7 +343,20 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target, d = S.state.draft;
-  if (t.dataset.mod && d) { const m = MODS.find(x => x.id === t.dataset.mod), r = compute(d.c); if (m.ty === "spur") { d.c.sel = d.c.sel || {}; d.c.sel[m.id] = t.checked; } else d.c.opt[m.id] = t.checked ? 1 : 0; S.save(); vWizard(); return; }
+  if (t.dataset.mod && d) { const m = RW.mods().find(x => x.id === t.dataset.mod), r = compute(d.c); if (m.ty === "spur") { d.c.sel = d.c.sel || {}; d.c.sel[m.id] = t.checked; } else d.c.opt[m.id] = t.checked ? 1 : 0; S.save(); vWizard(); return; }
+  if (t.dataset.rw) {
+    const k = t.dataset.k, v = t.value, id = t.dataset.id;
+    RW.edit(R => { switch (t.dataset.rw) {
+      case "thr": R.thr[k] = +v; break;
+      case "proc": R.proc[k] = v; break;
+      case "gname": R.gates[t.dataset.g] = v.trim() || R.gates[t.dataset.g]; break;
+      case "iname": { const i = R.items.find(x => x.id === id); if (i && v.trim()) i.name = v.trim(); break; }
+      case "mod": R.mods[id] = Object.assign({t: RW.mods().find(m => m.id === id).t, d: RW.mods().find(m => m.id === id).d}, R.mods[id] || {}, {[k]: v.trim() || RW.mods().find(m => m.id === id)[k]}); break;
+    } });
+    toast("Regelwerk gespeichert"); if (t.dataset.rw === "thr" || t.dataset.rw === "proc") rwRender(); return;
+  }
+  if (t.id === "rwcsv" && t.files[0]) { t.files[0].arrayBuffer().then(b => { try { const n = RW.importCsv(b); toast(n.quellen + " Quellzeilen übernommen, " + n.neu + " neue Liefergegenstände"); rwRender(); } catch (err) { toast("CSV nicht lesbar: Spalten passen nicht"); } }); t.value = ""; return; }
+  if (t.id === "rwjson" && t.files[0]) { t.files[0].text().then(x => { try { const n = RW.importRules(x); toast(n + " Liefergegenstände importiert"); rwRender(); } catch (err) { toast("Import fehlgeschlagen: Datei passt nicht zum Format"); } }); t.value = ""; return; }
   if (t.dataset.pdate !== undefined) { S.setDate(t.dataset.id, t.value); toast("Plantermin gespeichert"); return; }
   if (t.dataset.fileinput !== undefined) { addFiles(t); return; }
   if (t.dataset.f && d) { d[t.dataset.f] = t.value; S.save(); return; }

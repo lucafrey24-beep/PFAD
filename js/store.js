@@ -1,6 +1,7 @@
 // Zustand, Speicherung (localStorage), Freigabe-Workflow, Exporte. Alle Daten bleiben auf dem Gerät.
 import {TODAY, PCS, STATUS, ROLES, SPN, PRESETS} from "./data.js";
 import {compute, fmtD, stepDelivs} from "./model.js";
+import {rules, importRules} from "./rules.js";
 
 const LS = "pfad-data";
 export const state = {P: [], seq: 1, role: "PL", theme: "dark", draft: null, fs: 1, hc: false, lastBackup: 0, since: 0, corrupt: false};
@@ -175,9 +176,9 @@ export function resetAll() { state.P = []; state.seq = 1; state.role = "PL"; sta
 export function importJSON(text) {
   const s = JSON.parse(text);
   if (!s || !validP(s.P)) throw new Error("format");
-  state.P = s.P; state.seq = Number.isFinite(s.seq) ? s.seq : state.seq; state.draft = null; norm(); save(); return state.P.length;
+  state.P = s.P; state.seq = Number.isFinite(s.seq) ? s.seq : state.seq; state.draft = null; norm(); save(); if (s.rules) { try { importRules(JSON.stringify(s.rules)); } catch (e) { /* Regelwerk ungültig, Vorhaben trotzdem importiert */ } } return state.P.length;
 }
-export const exportJSON = () => JSON.stringify({version: 1, P: state.P, seq: state.seq}, null, 2);
+export const exportJSON = () => JSON.stringify({version: 2, P: state.P, seq: state.seq, rules: rules()}, null, 2);
 function cell(v) { v = String(v ?? ""); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 export function csvRoadmap(list) {
   const hd = ["ID", "Vorhaben", "Product Center", "Projektleitung", "zugeordneter PEP-Pfad", "Reviews", "zuletzt freigegebener Meilenstein", "nächster geplanter Meilenstein", "Termin", "Status", "Änderungskommentar", "Konfigurationsversion", "Schritte erledigt", "Schritte gesamt", "Nachweis-Dateien"];

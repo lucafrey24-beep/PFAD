@@ -10,8 +10,11 @@ ES-Module und Service Worker brauchen einen Server (nicht `file://`):
 Ordnerinhalt in ein GitHub-Repo legen, Settings > Pages > Branch `main`, Ordner `/ (root)`. Danach auf dem Handy die URL öffnen und "Zum Home-Bildschirm" wählen. Bei jeder Änderung `CACHE` in `sw.js` erhöhen.
 
 ## Struktur
-- `js/model.js` Konfigurationslogik (ohne DOM), `js/data.js` Konstanten (keine Beispielvorhaben), `js/store.js` Zustand, Workflow, Export, `js/app.js` Oberfläche
+- `js/model.js` Konfigurationslogik (ohne DOM), `js/data.js` Konstanten (keine Beispielvorhaben), `js/store.js` Zustand, Workflow, Export, `js/app.js` Oberfläche, `js/cfg.js` Konfigurator-Ansicht (Karten, Gesamtprozess, Änderungsanzeige)
 - `icons/icon.svg` Quelle, `sh tools/make-icons.sh` erzeugt PNGs (rsvg-convert)
+
+## Konfigurator (ab 1.6.0)
+Aufbau wie ein Autokonfigurator: links die Schritte (Schnellstart, Einstufung, Spur, Generationsstufe, Bausteine, Zusammenfassung), oben eine Zeile mit Pfad, Gates, Reviews und Liefergegenständen, darunter der Gesamtprozess über die fünf Phasen. Spur, Stufe, Bausteine und Referenzfälle sind Karten; jede Karte zeigt vorab, was sie am Pfad ändert (z. B. „+1 Gate“, „+2 Liefergegenstände“). Nach einer Wahl zeigt die obere Zeile die Änderung, neue Gates, Reviews und Bausteine leuchten im Gesamtprozess kurz auf. Logik in `js/cfg.js`.
 
 ## Bedienung am PC
 - Ab 900 px Breite: Navigation als Seitenleiste links, Fenster (Sheets) mittig, Hover-Zustände.

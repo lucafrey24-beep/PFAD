@@ -4,8 +4,9 @@ import {compute, delivs, phaseOf, stepDelivs, fmtD} from "./model.js";
 import * as F from "./files.js";
 import * as RW from "./rules.js";
 import * as S from "./store.js";
+import * as C from "./cfg.js";
 
-const VERSION = "1.5.0";
+const VERSION = "1.6.0";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -52,7 +53,7 @@ function badge() { const n = S.mine(S.state.role).length; const b = $("#tbQ"); b
 function render() {
   if (dlg.open) dlg.close();
   const r = route(); badge();
-  const wiz = r.tab === "neu", wide = matchMedia("(min-width:900px)").matches; tabs.hidden = wiz && !wide; view.classList.toggle("modal", wiz && !wide);
+  const wiz = r.tab === "neu", wide = matchMedia("(min-width:900px)").matches; tabs.hidden = wiz && !wide; view.classList.toggle("modal", wiz && !wide); view.classList.toggle("cfgm", wiz); if (wiz && ui.lastTab !== "neu") { ui.cfgPrev = null; ui.delta = null; } ui.lastTab = r.tab;
   const idx = Math.max(0, TABS.indexOf(r.tab === "vorhaben" || TABS.includes(r.tab) ? r.tab : "vorhaben"));
   tabs.querySelector(".pill").style.transform = "translateX(" + idx * 100 + "%)";
   tabs.querySelectorAll("a").forEach((a, i) => i === idx ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
@@ -208,16 +209,57 @@ function vOpen() {
   view.innerHTML = '<h1 class="big">Offene Fragen</h1><ul class="group">' + Q.map((q, i) => '<li class="row"><span class="t"><span class="s">Frage ' + (i + 1) + "</span>" + esc(q) + "</span></li>").join("") + "</ul>";
 }
 
-/* ---------- Assistent ---------- */
+/* ---------- Konfigurator (Aufbau wie ein Autokonfigurator) ---------- */
+const CSTEPS = ["Schnellstart", "Einstufung", "Spur", "Generationsstufe", "Bausteine", "Zusammenfassung"];
+// Merkt den letzten Stand, damit die Zusammenfassung zeigt, was die letzte Wahl geändert hat
+function track(s) {
+  if (ui.cfgPrev && ui.cfgPrev.sig !== s.sig) { ui.delta = C.diff(ui.cfgPrev, s); ui.newKeys = C.newMarks(ui.cfgPrev, s); ui.fresh = true; }
+  else ui.fresh = false;
+  ui.cfgPrev = s;
+}
+function cfgNext(w) {
+  return w.step < 5 ? '<button class="btn primary cb-next" data-act="wiznext">Weiter: ' + esc(CSTEPS[w.step + 1]) + " ›</button>"
+    : '<button class="btn primary cb-next" data-act="wizsubmit"' + (S.state.role === "PL" ? "" : " disabled") + ">Einreichen</button>";
+}
+function cfgNav(w) {
+  const sub = [["cfg-stufe", "Durch die Stufe"], ["cfg-spur", "Durch die Spur"], ["cfg-opt", "Optional"]];
+  return '<nav class="cnav" aria-label="Schritte des Konfigurators"><ol>' + CSTEPS.map((t, i) =>
+    '<li><button type="button" data-act="cfggo" data-v="' + i + '"' + (i === w.step ? ' aria-current="step"' : "") + (i < w.step ? ' class="done"' : "") + ">" + esc(t) + "</button>" +
+    (i === 4 && w.step === 4 ? '<ul class="csub">' + sub.map(([id, l]) => '<li><button type="button" data-act="cfgjump" data-v="' + id + '">' + l + "</button></li>").join("") + "</ul>" : "") + "</li>").join("") + "</ol></nav>";
+}
+const cfgDv = s => s.ok ? String(s.dv) : "–";
+const cfgAt = s => s.ok ? [["Pfad", s.path], ["Gates", String(s.gates)], ["Reviews", String(s.rv)], ["Liefergegenstände", cfgDv(s)]] : [["Pfad", "ohne PEP"]];
+function stufeCards(c, cur) {
+  const T = RW.rules().thr, hint = {Light: "bis " + T.light + " % neu", Standard: "über " + T.light + " bis unter " + T.full + " % neu", Full: "ab " + T.full + " % neu"};
+  return ["Light", "Standard", "Full"].map(st => {
+    const s = C.sumOf(C.withStufe(c, st));
+    return C.card({sel: cur.ok && cur.r.st === st, badge: hint[st], title: st, sub: st === "Light" ? "kleiner Pfad, G1 und G2 als Startfreigabe G1+2" : st === "Full" ? "voller Pfad, ohne Abgleich mit Referenzprodukt" : "mittlerer Pfad",
+      attrs: [["Gates", String(s.gates)], ["Reviews", String(s.rv)], ["Liefergegenstände", cfgDv(s)]], delta: C.diff(cur, s), act: ' data-act="cfgstufe" data-v="' + st + '"', label: "Wählen", dis: !cur.ok});
+  }).join("");
+}
+function modCard(m, c, cur, r) {
+  const on = r.isOn(m), fixed = m.ty === "stufe", abw = m.ty === "spur" && r.defOn(m) && !on, s = C.sumOf(C.withMod(c, m, !on));
+  const sw = '<span class="sw"><input type="checkbox" data-mod="' + m.id + '"' + (on ? " checked" : "") + (fixed ? " disabled" : "") + ' aria-label="' + esc(m.t) + '"><span></span></span>';
+  return '<article class="ccard mod' + (on ? " sel" : "") + '"><div class="cc-top"><div><span class="cc-ph">' + esc(PH[m.ph]) + "</span><h3>" + esc(m.t) + "</h3></div>" + sw + "</div>" +
+    '<dl class="cc-at"><dt>Liefert</dt><dd>' + esc(m.d) + "</dd>" + (m.rv ? "<dt>Review</dt><dd>" + esc(m.rv.n) + "</dd>" : "") + "</dl>" +
+    (fixed ? '<p class="cc-sub">Pflicht in Standard und Light, durch die Stufe gesetzt.</p>' :
+      '<div class="cc-f"><div class="cc-d"><span class="lab">' + (on ? "Beim Abwählen" : "Beim Hinzufügen") + "</span>" + C.chips(C.diff(cur, s), "keine Änderung am Pfad") + "</div></div>") +
+    (abw ? '<div class="why"><label class="f" for="why-' + m.id + '">Begründung der Abwahl (Pflicht)</label><textarea id="why-' + m.id + '" data-why="' + m.id + '" maxlength="300">' + esc(c.why[m.id] || "") + "</textarea></div>" : "") + "</article>";
+}
 function vWizard() {
-  if (!S.state.draft) { S.state.draft = S.newWiz(); S.save(); }
-  const w = S.state.draft, c = w.c, r = compute(c), STEPS = ["Steckbrief", "Einstufung", "Spur", "Stufe", "Bausteine", "Prüfen"];
-  setBar('<button class="navbtn" data-act="wizleave">Verlassen</button>', "Schritt " + (w.step + 1) + " von 6", '<button class="navbtn strong" data-act="wizsum">Übersicht</button>');
-  let h = '<div class="prog" aria-hidden="true">' + STEPS.map((_, i) => '<i class="' + (i < w.step ? "done" : i === w.step ? "on" : "") + '"></i>').join("") + '</div><h1 class="big">' + STEPS[w.step] + "</h1>";
+  if (!S.state.draft) { S.state.draft = S.newWiz(); S.save(); ui.cfgPrev = null; ui.delta = null; }
+  const w = S.state.draft, c = w.c, s = C.sumOf(c), r = s.r;
+  track(s);
+  setBar('<button class="navbtn" data-act="wizleave">Verlassen</button>', "Schritt " + (w.step + 1) + " von 6 · " + CSTEPS[w.step], '<button class="navbtn strong" data-act="wizsum">Übersicht</button>');
+  let h = '<div class="cfg">' + cfgNav(w) + '<div class="cmain"><div id="cfgBar">' + C.bar(s, ui.delta, ui.fresh, cfgNext(w)) + '</div><div id="cfgStage">' + C.stage(s, ui.fresh ? ui.newKeys : null) + "</div>";
+  h += '<h1 class="big">' + CSTEPS[w.step] + "</h1>";
   if (ui.wizErr) h += '<div class="err" role="alert">' + esc(ui.wizErr) + "</div>";
   if (w.step === 0) {
-    if (!w.meta) h += '<h2 class="sec" style="margin-top:0">Referenzfall laden (Tab. 16)</h2><ul class="group">' + PRESETS.map((p, i) => '<li><button class="row" data-act="preset" data-i="' + i + '"><span class="t">' + esc(p.n) + '<span class="s">' + esc(p.s) + '</span></span><span class="chev">›</span></button></li>').join("") + "</ul>";
-    h += '<h2 class="sec">Angaben</h2><div class="card"><div class="fg"><label class="f" for="w-name">Name des Vorhabens</label><input id="w-name" data-f="name" type="text" value="' + esc(w.name) + '" maxlength="80" autocomplete="off"></div>' +
+    if (!w.meta) h += '<p class="meta">Mit einem Referenzfall aus Tab. 16 starten oder Schritt für Schritt selbst konfigurieren.</p><div class="cgrid">' + PRESETS.map((p, i) => {
+      const ps = C.sumOf(C.withPreset(c, p));
+      return C.card({sel: ps.sig === s.sig, badge: "Referenzfall", title: p.n, sub: p.s, attrs: cfgAt(ps), delta: C.diff(s, ps), act: ' data-act="preset" data-i="' + i + '"', label: "Übernehmen"});
+    }).join("") + "</div>";
+    h += '<h2 class="sec">Steckbrief</h2><div class="card"><div class="fg"><label class="f" for="w-name">Name des Vorhabens</label><input id="w-name" data-f="name" type="text" value="' + esc(w.name) + '" maxlength="80" autocomplete="off"></div>' +
       '<div class="fg"><label class="f" for="w-pc">Product Center</label><select id="w-pc" data-f="pc">' + PCS.map(x => "<option" + (x === w.pc ? " selected" : "") + ">" + esc(x) + "</option>").join("") + '</select></div>' +
       '<div class="fg"><label class="f" for="w-pl">Projektleitung (Pflicht)</label><input id="w-pl" data-f="pl" type="text" value="' + esc(w.pl) + '" maxlength="60" autocomplete="off"></div>' +
       '<div class="fg"><label class="f" for="w-date">Termin nächster Meilenstein (optional)</label><input id="w-date" data-f="date" type="date" value="' + esc(w.date) + '"></div>' +
@@ -225,36 +267,50 @@ function vWizard() {
       '<div class="fg" style="margin:0"><label class="f" for="w-desc">Kurzbeschreibung (optional)</label><textarea id="w-desc" data-f="desc" maxlength="400">' + esc(w.desc) + "</textarea></div></div>";
   } else if (w.step === 1) {
     const T = ["Dauer mindestens 2 Monate", "Mindestens 2 Abteilungen beteiligt", "Mindestens 0,3 FTE oder 30 000 € Aufwand"];
-    h += '<div class="card" style="padding-top:4px;padding-bottom:4px">' + T.map((t, i) => '<div class="qrow" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span>' + t + "</span>" + yn("thr", i, c.thr[i]) + "</div>").join("") + "</div>" +
+    h += '<p class="meta">Erst wenn alle drei Schwellen erreicht sind, entsteht ein PEP-Pfad.</p><div class="card" style="padding-top:4px;padding-bottom:4px">' + T.map((t, i) => '<div class="qrow" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span>' + t + "</span>" + yn("thr", i, c.thr[i]) + "</div>").join("") + "</div>" +
       (r.ok ? '<div class="note">Alle drei Schwellen erreicht: PEP-pflichtig.</div>' : '<div class="warn">Unter den Schwellen: Das Vorhaben wird als Roadmap-Eintrag ohne PEP angelegt.</div>');
   } else if (w.step === 2) {
+    const cur = C.spurKey(r);
+    h += '<p class="meta">Die Spur legt Takt, Bausteine und den Satz an Liefergegenständen fest. Jede Karte zeigt, was sich am Pfad ändert.</p><div class="cgrid">' + C.SPUREN.map((x, i) => {
+      const hs = C.sumOf(C.withSpur(c, x));
+      return C.card({sel: cur === x.k, title: x.t, sub: x.n, attrs: [["Hardware", x.hw], ["Takt", x.takt], ["Liefergegenstände", "PEP " + hs.r.proc], ["Gates", String(hs.gates)], ["Reviews", String(hs.rv)]],
+        delta: C.diff(s, hs), act: ' data-act="cfgspur" data-i="' + i + '"', label: "Auswählen", dis: !r.ok});
+    }).join("") + "</div>";
     const Q = ["Läuft das Ergebnis auf einem Gerät?", "Wird die Hardware neu entwickelt oder verändert?", "Führt die Hardware das Vorhaben (Software folgt dem Hardwarestand)?"];
-    h += '<div class="card" style="padding-top:4px;padding-bottom:4px">' + Q.map((t, i) => '<div class="qrow' + (i && !c.q[0] ? " off" : i === 2 && !c.q[1] ? " off" : "") + '" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span>' + t + "</span>" + yn("q", i, c.q[i]) + "</div>").join("") + "</div>" +
-      '<div class="spur"><div class="L">' + r.sp + '</div><div><b>Spur ' + r.sp + " · " + esc(SPN[r.sp]) + "</b><p>" + esc(SPDESC[r.sp === "B" && r.hc ? "Bh" : r.sp]) + "</p></div></div>";
+    h += '<details class="card cq"><summary>Mit drei Fragen bestimmen (Entscheidungsbaum)</summary>' + Q.map((t, i) => '<div class="qrow' + (i && !c.q[0] ? " off" : i === 2 && !c.q[1] ? " off" : "") + '" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span>' + t + "</span>" + yn("q", i, c.q[i]) + "</div>").join("") + "</details>";
   } else if (w.step === 3) {
+    h += '<p class="meta">Die Stufe folgt aus dem Anteil der Neuentwicklung. Eine Karte setzt Beispielwerte, die Anteile darunter genau einstellen.</p><div class="cgrid c3" id="cfgStufe">' + stufeCards(c, s) + "</div>";
     h += '<div class="card">' + stepper("hw", "Hardware-Neuentwicklung", c.hw, !r.hc) + stepper("sw", "Software-Neuentwicklung", c.sw, false) +
-      (r.hc ? "" : '<p class="foot" style="margin:8px 0 0">Ohne Hardwareänderung zählt nur der Softwareanteil.</p>') +
-'<div class="lvl" id="lvl">' + lvl(r) + '</div></div><div class="card"><div class="fg" style="margin:0"><label class="f" for="w-ref2">Referenzprodukt</label><input id="w-ref2" data-f="ref" type="text" value="' + esc(w.ref) + '" maxlength="80"><p class="foot" style="margin:6px 0 0">Bei Standard und Light wird der Abgleich mit dem Referenzprodukt als Baustein vorgeschlagen.</p></div></div>';
+      (r.hc ? '<p class="foot" style="margin:8px 0 0">Bei Hardwareänderung zählt der höhere Anteil (Annahme).</p>' : '<p class="foot" style="margin:8px 0 0">Ohne Hardwareänderung zählt nur der Softwareanteil.</p>') + "</div>" +
+      '<div class="card"><div class="fg" style="margin:0"><label class="f" for="w-ref2">Referenzprodukt</label><input id="w-ref2" data-f="ref" type="text" value="' + esc(w.ref) + '" maxlength="80"><p class="foot" style="margin:6px 0 0">Bei Standard und Light wird der Abgleich mit dem Referenzprodukt als Baustein gesetzt.</p></div></div>';
   } else if (w.step === 4) {
-    const pool = RW.mods().filter(m => r.avail(m));
-    const sw = (m, on, dis) => '<span class="sw"><input type="checkbox" data-mod="' + m.id + '"' + (on ? " checked" : "") + (dis ? " disabled" : "") + ' aria-label="' + esc(m.t) + '"><span></span></span>';
-    h += '<p class="meta">Der Pflichtkern ist fest. Vorgeschlagene Bausteine lassen sich nur mit Begründung abwählen.</p><ul class="group">' +
-      pool.map(m => { const on = r.isOn(m), fixed = m.ty === "stufe", abw = m.ty === "spur" && !on;
-        return '<li class="mod' + (on ? "" : " off") + '"><div class="row"><span class="t">' + esc(m.t) + '<span class="s">' + esc(PH[m.ph]) + " · " + (fixed ? "durch die Stufe gesetzt" : m.ty === "spur" ? "durch die Spur vorgeschlagen" : "optional") + '</span></span>' + sw(m, on, fixed) + "</div>" +
-          (abw ? '<div class="why"><label class="f" for="why-' + m.id + '">Begründung der Abwahl (Pflicht)</label><textarea id="why-' + m.id + '" data-why="' + m.id + '" maxlength="300">' + esc(c.why[m.id] || "") + "</textarea></div>" : "") + "</li>"; }).join("") + "</ul>";
+    const all = RW.mods(), pool = all.filter(m => r.avail(m)), na = all.filter(m => !r.avail(m));
+    const grp = (id, t, list, note) => list.length ? '<h2 class="sec" id="' + id + '">' + t + "</h2>" + (note ? '<p class="foot" style="margin:0 16px 8px">' + note + "</p>" : "") + '<div class="cgrid">' + list.map(m => modCard(m, c, s, r)).join("") + "</div>" : "";
+    h += '<p class="meta">Der Pflichtkern ist fest. Jede Karte zeigt, was ein Baustein am Pfad ändert. Vorgeschlagene Bausteine lassen sich nur mit Begründung abwählen.</p>' +
+      grp("cfg-stufe", "Durch die Stufe gesetzt", pool.filter(m => m.ty === "stufe")) +
+      grp("cfg-spur", "Durch die Spur vorgeschlagen", pool.filter(m => m.ty === "spur"), "Abwählen nur mit Begründung.") +
+      grp("cfg-opt", "Optional", pool.filter(m => m.ty === "opt")) +
+      (na.length ? '<p class="foot">Für diese Spur und Stufe nicht verfügbar: ' + esc(na.map(m => m.t).join(", ")) + "</p>" : "");
   } else {
     h += '<div class="spur"><div class="L">' + r.sp + '</div><div><b>' + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + esc(w.name || "Ohne Namen") + " · " + esc(w.pc) + "</p></div></div>";
     if (r.ok) { let lp = -1; h += '<h2 class="sec">Ablauf</h2><ol class="tl">'; r.order.forEach(o => { const ph = phaseOf(o); if (ph !== lp) { h += '<li class="ph">' + esc(PH[ph]) + "</li>"; lp = ph; } h += '<li class="' + (o.rv ? "rv" : "") + '">' + esc(o.n) + (o.t ? " " + esc(o.t) : "") + "</li>"; }); h += "</ol>";
-      h += '<h2 class="sec">Bausteine</h2><ul class="group">' + r.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") + r.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc(c.why[m.id] || "Begründung fehlt") + "</span></span></li>").join("") + "</ul>"; }
-    if (r.ok) h += '<h2 class="sec">Liefergegenstände (' + esc(r.proc) + ')</h2><div class="group" style="padding-right:0">' + delivs(r).map(x => x.gone ? "" : '<details class="dv"><summary>' + esc(x.t) + " · " + x.items.length + '</summary><ul>' + (x.items.length ? x.items.map(i => "<li>" + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt. Im Regelwerk ergänzen.</li>") + "</ul></details>").join("") + "</div>";
+      h += '<h2 class="sec">Bausteine</h2><ul class="group">' + r.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") + r.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc(c.why[m.id] || "Begründung fehlt") + "</span></span></li>").join("") + "</ul>";
+      h += '<h2 class="sec">Liefergegenstände (' + esc(r.proc) + ')</h2><div class="group" style="padding-right:0">' + delivs(r).map(x => x.gone ? "" : '<details class="dv"><summary>' + esc(x.t) + " · " + x.items.length + '</summary><ul>' + (x.items.length ? x.items.map(i => "<li>" + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt. Im Regelwerk ergänzen.</li>") + "</ul></details>").join("") + "</div>"; }
     h += '<p class="foot">' + (S.state.role === "PL" ? "Nach dem Einreichen prüft das MS Gate Committee, das PPB entscheidet." : "Einreichen ist nur in der Rolle Projektleitung möglich.") + "</p>";
   }
-  h += '<div class="actionbar">' + (w.step ? '<button class="btn back" data-act="wizprev">Zurück</button>' : "") + (w.step < 5 ? '<button class="btn primary" data-act="wiznext">Weiter</button>' : '<button class="btn primary" data-act="wizsubmit"' + (S.state.role === "PL" ? "" : " disabled") + ">Einreichen</button>") + "</div>";
+  h += '<div class="actionbar">' + (w.step ? '<button class="btn back" data-act="wizprev">Zurück</button>' : "") + (w.step < 5 ? '<button class="btn primary" data-act="wiznext">Weiter</button>' : '<button class="btn primary" data-act="wizsubmit"' + (S.state.role === "PL" ? "" : " disabled") + ">Einreichen</button>") + "</div></div></div>";
   view.innerHTML = h;
+}
+// Live-Aktualisierung beim Halten der Plus-/Minus-Tasten, ohne die Eingabe neu aufzubauen
+function cfgLive() {
+  const d = S.state.draft; if (!d) return; const s = C.sumOf(d.c); track(s);
+  const b = $("#cfgBar"), st = $("#cfgStage"), k = $("#cfgStufe");
+  if (b) b.innerHTML = C.bar(s, ui.delta, ui.fresh, cfgNext(d)); if (st) st.innerHTML = C.stage(s, ui.fresh ? ui.newKeys : null); if (k) k.innerHTML = stufeCards(d.c, s);
+  const hw = $("#in-hw"), r = s.r; if (hw) { hw.disabled = !r.hc; hw.parentElement.querySelectorAll("button").forEach(x => x.disabled = !r.hc); }
 }
 const stepper = (k, l, v, dis) => '<div class="step"><div class="lab">' + l + '</div><div class="ctl"><button type="button" data-hold="' + k + '" data-d="-5" aria-label="' + l + ' verringern"' + (dis ? " disabled" : "") + '>−</button><input type="text" inputmode="numeric" id="in-' + k + '" data-stepin="' + k + '" value="' + v + '" aria-label="' + l + ' in Prozent"' + (dis ? " disabled" : "") + '><b>%</b><button type="button" data-hold="' + k + '" data-d="5" aria-label="' + l + ' erhöhen"' + (dis ? " disabled" : "") + ">+</button></div></div>";
 const lvl = r => ["Full", "Standard", "Light"].map(s => '<div class="' + (r.st === s ? "on" : "") + '"><b>' + s + "</b>" + (s === "Full" ? "ab " + RW.rules().thr.full + " %" : s === "Light" ? "bis " + RW.rules().thr.light + " %" : "dazwischen") + "</div>").join("");
-function wizGo(n) { const w = S.state.draft; w.step = n; ui.wizErr = ""; S.save(); vWizard(); view.scrollTop = 0; }
+function wizGo(n) { const w = S.state.draft; w.step = n; ui.wizErr = ""; ui.delta = null; S.save(); vWizard(); view.scrollTop = 0; }
 
 
 /* ---------- Regelwerk ---------- */
@@ -332,9 +388,13 @@ document.addEventListener("click", e => {
     case "wipe": openDlg('<h2 id="dlg-h">Alle Daten löschen?</h2><p class="meta">Alle Vorhaben, der Entwurf und die Einstellungen gehen verloren. Zur Bestätigung LÖSCHEN eintippen.</p><label class="f sr" for="wipe-in">Bestätigung</label><input id="wipe-in" type="text" autocomplete="off" autocapitalize="characters" placeholder="LÖSCHEN"><p class="err" id="werr" hidden>Bitte genau LÖSCHEN eintippen.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn destructive" data-main data-act="wipeok">Löschen</button></div>'); setTimeout(() => $("#wipe-in")?.focus(), 50); break;
     case "wipeok": if ($("#wipe-in").value.trim() !== "LÖSCHEN") { $("#werr").hidden = false; break; } S.resetAll(); applyTheme(); closeDlg(); toast("Alle Daten gelöscht"); location.hash = "#/vorhaben"; render(); break;
     case "report": openDlg(report()); break;
-    case "preset": S.state.draft = S.wizFromPreset(+el.dataset.i); ui.wizErr = ""; S.save(); vWizard(); break;
-    case "thr": d.c.thr[+el.dataset.i] = +el.dataset.v; S.guardSpur(d); S.save(); vWizard(); break;
-    case "q": d.c.q[+el.dataset.i] = +el.dataset.v; if (!d.c.q[0]) { d.c.q[1] = 1; d.c.q[2] = 1; } S.guardSpur(d); S.save(); vWizard(); break;
+    case "preset": { const p = PRESETS[+el.dataset.i]; d.c = C.withPreset(d.c, p); d.c.lastSp = null; S.guardSpur(d); ui.wizErr = ""; S.save(); keepScroll(vWizard); break; }
+    case "cfggo": wizGo(+el.dataset.v); break;
+    case "cfgjump": document.getElementById(el.dataset.v)?.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth", block: "start"}); break;
+    case "cfgspur": d.c = C.withSpur(d.c, C.SPUREN[+el.dataset.i]); S.guardSpur(d); S.save(); keepScroll(vWizard); break;
+    case "cfgstufe": { const x = C.withStufe(d.c, el.dataset.v); d.c.hw = x.hw; d.c.sw = x.sw; S.save(); keepScroll(vWizard); break; }
+    case "thr": d.c.thr[+el.dataset.i] = +el.dataset.v; S.guardSpur(d); S.save(); keepScroll(vWizard); break;
+    case "q": d.c.q[+el.dataset.i] = +el.dataset.v; if (!d.c.q[0]) { d.c.q[1] = 1; d.c.q[2] = 1; } S.guardSpur(d); S.save(); keepScroll(vWizard); break;
     case "wiznext": { if (d.step === 0 && (!d.name.trim() || !d.pl.trim())) { ui.wizErr = !d.name.trim() ? "Bitte einen Namen eingeben." : "Bitte die Projektleitung angeben."; vWizard(); break; } wizGo(Math.min(5, d.step + 1)); break; }
     case "wizprev": wizGo(Math.max(0, d.step - 1)); break;
     case "wizsum": { const r = compute(d.c); openDlg('<h2 id="dlg-h">Übersicht</h2><p class="meta">' + esc(d.name || "Ohne Namen") + " · " + esc(d.pc) + '</p><div class="spur"><div class="L">' + r.sp + "</div><div><b>" + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + r.on.length + " Bausteine aktiv, " + r.ab.length + ' abgewählt</p></div></div><div class="btns"><button class="btn" data-act="close">Weiter bearbeiten</button><button class="btn destructive" data-act="wizdrop">Entwurf verwerfen</button></div>'); break; }
@@ -345,7 +405,7 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target, d = S.state.draft;
-  if (t.dataset.mod && d) { const m = RW.mods().find(x => x.id === t.dataset.mod), r = compute(d.c); if (m.ty === "spur") { d.c.sel = d.c.sel || {}; d.c.sel[m.id] = t.checked; } else d.c.opt[m.id] = t.checked ? 1 : 0; S.save(); vWizard(); return; }
+  if (t.dataset.mod && d) { const m = RW.mods().find(x => x.id === t.dataset.mod), r = compute(d.c); if (m.ty === "spur") { d.c.sel = d.c.sel || {}; d.c.sel[m.id] = t.checked; } else d.c.opt[m.id] = t.checked ? 1 : 0; S.save(); keepScroll(vWizard); return; }
   if (t.dataset.rw) {
     const k = t.dataset.k, v = t.value, id = t.dataset.id;
     RW.edit(R => { switch (t.dataset.rw) {
@@ -374,7 +434,7 @@ document.addEventListener("input", e => {
 });
 dlg.addEventListener("click", e => { if (e.target === dlg) closeDlg(); });
 /* Stepper: Gedrückt halten lässt den Wert immer schneller laufen */
-function setPct(k, v, typed) { const d = S.state.draft; if (!d) return; d.c[k] = Math.max(0, Math.min(100, Math.round(v / (typed ? 1 : 5)) * (typed ? 1 : 5))); S.guardSpur(d); S.save(); const i = $("#in-" + k); if (i) i.value = d.c[k]; const l = $("#lvl"); if (l) l.innerHTML = lvl(compute(d.c)); }
+function setPct(k, v, typed) { const d = S.state.draft; if (!d) return; d.c[k] = Math.max(0, Math.min(100, Math.round(v / (typed ? 1 : 5)) * (typed ? 1 : 5))); S.guardSpur(d); S.save(); const i = $("#in-" + k); if (i) i.value = d.c[k]; cfgLive(); }
 let hold = null;
 function stopHold() { if (hold) { clearTimeout(hold.t); hold = null; } }
 document.addEventListener("pointerdown", e => {

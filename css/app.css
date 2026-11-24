@@ -255,7 +255,8 @@ details.dv .fl{margin:6px 0 4px 0}
 .cnav button.done{border-color:var(--tint)}
 .cnav button[aria-current="step"]{background:var(--label);color:var(--bg);border-color:var(--label);font-weight:700}
 .csub{display:none}
-.cbar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;padding:10px 14px;margin:0 0 12px;border-radius:14px;
+#cfgBar{position:sticky;top:0;z-index:5}
+.cbar{background:var(--bg)!important;display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;padding:10px 14px;margin:0 0 12px;border-radius:14px;
   background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border:1px solid var(--glass-border)}
 .cbar .lab,.cc-d .lab{display:block;font-size:.7rem;color:var(--label-2)}
 .cb-k b{font-size:1.2rem;line-height:1.2}
@@ -329,5 +330,5 @@ details.cq summary{cursor:pointer;font-weight:600;min-height:32px}
   .csub button{min-height:36px;font-size:.88rem;color:var(--label-2)}
   .cgrid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
-@media print{.cnav,.cbar .cb-next,.actionbar{display:none}.cbar{position:static}}
+@media print{.cnav,.cbar .cb-next,.actionbar{display:none}#cfgBar{position:static}}
 .cb-d:empty{display:none}

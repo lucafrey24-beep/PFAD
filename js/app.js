@@ -6,7 +6,7 @@ import * as RW from "./rules.js";
 import * as S from "./store.js";
 import * as C from "./cfg.js";
 
-const VERSION = "1.6.0";
+const VERSION = "1.6.1";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");

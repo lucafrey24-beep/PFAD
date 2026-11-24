@@ -1,6 +1,6 @@
 // Offline-Betrieb wie bei SATZ: zuerst Netzwerk (immer die neueste Version), nach 3 s Zwischenspeicher.
 // Bei jeder Veröffentlichung CACHE erhöhen, damit installierte Apps die alten Dateien verwerfen.
-const CACHE = "pfad-v1.6.0";
+const CACHE = "pfad-v1.6.1";
 const FILES = ["./", "index.html", "css/app.css", "js/app.js", "js/store.js", "js/data.js", "js/model.js", "js/files.js", "js/rules.js", "js/cfg.js", "manifest.webmanifest", "fonts/archivo.woff2",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-180.png", "icons/icon-512.png", "icons/icon-maskable-512.png"];
 self.addEventListener("install", e => {

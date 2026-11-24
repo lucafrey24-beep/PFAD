@@ -26,7 +26,7 @@ export const STATUS = {
   on: ["On Track", "s-on"], off: ["Off Track", "s-off"], bl: ["Blockiert", "s-bl"], pe: ["Freigabe offen", "s-pe"],
   li: ["ohne PEP", "s-li"], re: ["Zurück an PL", "s-re"], ho: ["Hold", "s-re"], ki: ["Abgebrochen (Kill)", "s-re"], do: ["Abgeschlossen", "s-on"]
 };
-export const ROLES = {PL: "Projektleitung", MS: "MS Gate Committee", PPB: "PPB"};
+export const ROLES = {PL: "Projektleitung", MS: "MS Gate Committee", PPB: "PGB"};
 
 export function apprOf(l) {
   l = String(l);

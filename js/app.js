@@ -6,7 +6,7 @@ import * as RW from "./rules.js";
 import * as S from "./store.js";
 import * as C from "./cfg.js";
 
-const VERSION = "1.6.1";
+const VERSION = "1.6.2";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -73,7 +73,7 @@ function listRows() {
   const L = filtered();
   if (!L.length) return '<div class="empty">' + (S.state.P.length ? "Keine Vorhaben für diese Auswahl. Filter ändern oder die Suche leeren." : "Noch keine Vorhaben. Unter Neu legen Sie das erste an.") + "</div>";
   return '<ul class="group">' + L.map(p => { const r = compute(p.c), pr = S.progress(p), late = S.overdue(p);
-    return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.id) + " · " + esc(p.pc) + " · " + esc(p.pl) + '</span><span class="s">' + stBadge(p) + (p.status === "pe" ? " · " + esc(subLbl(p)) + ": " + (p.stage === "ppb" ? "wartet auf PPB" : "wartet auf MS Gate Committee") : "") + (late ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="s">Schritt ' + pr.done + " von " + pr.total + '</span><span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr">' + pathPill(r) + '</span><span class="chev" aria-hidden="true">›</span></a></li>';
+    return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.id) + " · " + esc(p.pc) + " · " + esc(p.pl) + '</span><span class="s">' + stBadge(p) + (p.status === "pe" ? " · " + esc(subLbl(p)) + ": " + (p.stage === "ppb" ? "wartet auf PGB" : "wartet auf MS Gate Committee") : "") + (late ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="s">Schritt ' + pr.done + " von " + pr.total + '</span><span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr">' + pathPill(r) + '</span><span class="chev" aria-hidden="true">›</span></a></li>';
   }).join("") + "</ul>";
 }
 function vList() {
@@ -91,7 +91,7 @@ function vDetail(r) {
   let h = '<p class="eyebrow">' + esc(p.id) + " · " + esc(p.pc) + '</p><h1 class="big">' + esc(p.name) + '</h1><p>' + pathPill(c) + " &nbsp;" + stBadge(p) + "</p>";
   if (p.note) h += '<div class="warn">' + esc(p.note) + "</div>";
   if (p.status === "pe") {
-    h += '<div class="qitem"><h3>' + (p.stage === "ppb" ? "Wartet auf PPB-Entscheidung" : "Wartet auf Prüfung durch das MS Gate Committee") + '</h3><p class="meta">Zur Freigabe: ' + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + "</p>" + evLine(p) + actionsFor(p) + "</div>";
+    h += '<div class="qitem"><h3>' + (p.stage === "ppb" ? "Wartet auf PGB-Entscheidung" : "Wartet auf Prüfung durch das MS Gate Committee") + '</h3><p class="meta">Zur Freigabe: ' + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + "</p>" + evLine(p) + actionsFor(p) + "</div>";
   }
   const ps = c.ok ? (S.subStep(p) || S.curStep(p)) : null;
   if (ps && p.status !== "do") {
@@ -138,9 +138,9 @@ function stepPanel(p, c, o, edit) {
 const row = (a, b) => '<li class="row"><span class="t">' + esc(a) + '</span><span class="tr">' + esc(b) + "</span></li>";
 function actionsFor(p) {
   const role = S.state.role, id = esc(p.id);
-  if (role === "MS" && p.stage === "ms") return '<div class="btns"><button class="btn primary" data-act="recommend" data-id="' + id + '">Prüfung ok, an PPB empfehlen</button><button class="btn destructive" data-act="rdlg" data-k="ret" data-id="' + id + '">Zurück an PL</button></div>';
+  if (role === "MS" && p.stage === "ms") return '<div class="btns"><button class="btn primary" data-act="recommend" data-id="' + id + '">Prüfung ok, an PGB empfehlen</button><button class="btn destructive" data-act="rdlg" data-k="ret" data-id="' + id + '">Zurück an PL</button></div>';
   if (role === "PPB" && p.stage === "ppb") return '<div class="btns"><button class="btn primary" data-act="go" data-id="' + id + '">Go</button><button class="btn" data-act="rdlg" data-k="modify" data-id="' + id + '">Modify</button><button class="btn" data-act="rdlg" data-k="hold" data-id="' + id + '">Hold</button><button class="btn destructive" data-act="rdlg" data-k="kill" data-id="' + id + '">Kill</button></div>';
-  return '<p class="foot" style="margin:0">In der Rolle ' + esc(ROLES[role]) + " ist hier keine Aktion möglich" + (role !== "PL" && p.stage === "ppb" && role === "MS" ? " (liegt beim PPB)" : "") + ".</p>";
+  return '<p class="foot" style="margin:0">In der Rolle ' + esc(ROLES[role]) + " ist hier keine Aktion möglich" + (role !== "PL" && p.stage === "ppb" && role === "MS" ? " (liegt beim PGB)" : "") + ".</p>";
 }
 
 /* ---------- Freigaben ---------- */
@@ -148,11 +148,11 @@ function vQueue() {
   setBar(brand, "", roleBtn());
   const role = S.state.role, mine = S.mine(role), q = S.queue(), others = q.filter(p => !mine.includes(p)), held = S.state.P.filter(p => p.status === "ho");
   let h = '<h1 class="big">Freigaben</h1>';
-  h += role === "PL" ? '<div class="note">Als Projektleitung reichen Sie Konfigurationen ein. Prüfen und Entscheiden geht in den Rollen MS Gate Committee und PPB (Rolle oben rechts).</div>'
-    : '<div class="note">Zweistufig: Das MS Gate Committee prüft und empfiehlt, das PPB entscheidet (Go, Modify, Hold, Kill). Spur wird an G1, Stufe und Bausteine an G2 freigegeben. Bei Light zusammen an G1+2.</div>';
+  h += role === "PL" ? '<div class="note">Als Projektleitung reichen Sie Konfigurationen ein. Prüfen und Entscheiden geht in den Rollen MS Gate Committee und PGB (Rolle oben rechts).</div>'
+    : '<div class="note">Zweistufig: Das MS Gate Committee prüft und empfiehlt, das PGB entscheidet (Go, Modify, Hold, Kill). Spur wird an G1, Stufe und Bausteine an G2 freigegeben. Bei Light zusammen an G1+2.</div>';
   const card = p => { const c = compute(p.c); return '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + '</h3></a><p class="meta">' + esc(p.id) + " · " + esc(p.pl) + " · eingereicht " + esc(p.submitted || "–") + " · " + pathPill(c) + "</p><p class=\"meta\">Zur Freigabe: " + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + " · wartet seit " + S.waitDays(p) + " Tag(en)</p>" + evLine(p) + actionsFor(p) + "</div>"; };
   h += '<h2 class="sec">Wartet auf mich (' + mine.length + ")</h2>" + (mine.length ? mine.map(card).join("") : '<div class="empty">Nichts zu tun. Hier erscheinen Vorhaben, sobald eine Konfiguration eingereicht ist.</div>');
-  if (others.length) h += '<h2 class="sec">Bei anderen (' + others.length + ')</h2><ul class="group">' + others.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + (p.stage === "ppb" ? "wartet auf PPB" : "wartet auf MS Gate Committee") + '</span></span><span class="chev">›</span></a></li>').join("") + "</ul>";
+  if (others.length) h += '<h2 class="sec">Bei anderen (' + others.length + ')</h2><ul class="group">' + others.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + (p.stage === "ppb" ? "wartet auf PGB" : "wartet auf MS Gate Committee") + '</span></span><span class="chev">›</span></a></li>').join("") + "</ul>";
   if (held.length) h += '<h2 class="sec">Hold (' + held.length + ')</h2><ul class="group">' + held.map(p => '<li class="row"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.note) + "</span></span>" + (role === "PPB" ? '<button class="btn small" data-act="resume" data-id="' + esc(p.id) + '">Aufheben</button>' : "") + "</li>").join("") + "</ul>";
   view.innerHTML = h;
 }
@@ -168,7 +168,7 @@ function vCockpit() {
     '<div class="kpi"><b>' + (cnt("bl") + cnt("off")) + '</b><span>Blockiert oder Off Track</span></div><button class="kpi" data-act="filterlate"><b>' + P.filter(S.overdue).length + '</b><span>Überfällig (Plantermin)</span></button></div>';
   const act = P.filter(p => !["li", "ki"].includes(p.status));
   h += '<h2 class="sec">Fortschritt je Vorhaben</h2>' + (act.length ? '<ul class="group">' + act.map(p => { const pr = S.progress(p); return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + stBadge(p) + " · " + esc(p.next || "–") + (S.overdue(p) ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr num">' + (pr.total ? pr.done + "/" + pr.total : "–") + '</span></a></li>'; }).join("") + "</ul>" : '<div class="empty">Keine Vorhaben mit PEP.</div>');
-  const wq = S.queue(); if (wq.length) h += '<h2 class="sec">Wartet auf Freigabe</h2><ul class="group">' + wq.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(subLbl(p)) + " · " + (p.stage === "ppb" ? "beim PPB" : "beim MS Gate Committee") + '</span></span><span class="tr num">' + S.waitDays(p) + " Tag(e)</span></a></li>").join("") + "</ul>";
+  const wq = S.queue(); if (wq.length) h += '<h2 class="sec">Wartet auf Freigabe</h2><ul class="group">' + wq.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(subLbl(p)) + " · " + (p.stage === "ppb" ? "beim PGB" : "beim MS Gate Committee") + '</span></span><span class="tr num">' + S.waitDays(p) + " Tag(e)</span></a></li>").join("") + "</ul>";
   h += '<h2 class="sec">Status je Product Center</h2><div class="card">';
   PCS.forEach(pc => { const L = P.filter(p => p.pc === pc && p.status !== "li"), n = L.length || 1;
     h += '<div class="hb" aria-hidden="true"><span>' + esc(pc.replace("PC ", "")) + '</span><div class="tr">' + ["on", "off", "bl", "pe", "re", "ho"].map(k => { const m = L.filter(p => p.status === k).length; return m ? '<div class="' + STATUS[k][1] + '" style="width:' + m / n * 100 + '%" title="' + esc(STATUS[k][0]) + ": " + m + '"></div>' : ""; }).join("") + "</div><b>" + L.length + "</b></div>"; });
@@ -201,11 +201,11 @@ function vMore() {
 }
 function vRules() {
   setBar(back("#/mehr", "Mehr"), "Regeln", roleBtn());
-  view.innerHTML = '<h1 class="big">Regeln und Quellen</h1><div class="card"><h3>Einstufung</h3><p class="meta">PEP-pflichtig ab mindestens 2 Monaten Dauer, 2 Abteilungen und 0,3 FTE oder 30 000 € Aufwand.</p><h3>Spur</h3><p class="meta">Drei Ja/Nein-Fragen: A (Device with Software), B (Software on Device), C (Software & Data).</p><h3>Generationsstufe</h3><p class="meta">Full ab 60 % Neuentwicklungsanteil, Light bis 20 %, sonst Standard. Bei Hardwareänderung zählt der höhere Anteil von HW und SW.</p><p class="warn">Die Schwellen 20 % und 60 % sowie die Max-Regel sind Annahmen, nicht abgestimmt.</p><h3>Bausteine</h3><p class="meta">Pflichtkern plus Bausteinpool. Vorgeschlagene Bausteine können nur mit Begründung abgewählt werden.</p><h3>Freigabe</h3><p class="meta">MS Gate Committee prüft, PPB entscheidet. Spur an G1, Stufe und Bausteine an G2, Light gemeinsam an G1+2.</p><h3>Quelle</h3><p class="meta" style="margin:0">Studienarbeit T3100, Kap. 5.7 und Tab. 16 (A-Full 8, B-Standard 5, B-Light 3, C-Full 5 Reviews).</p></div>';
+  view.innerHTML = '<h1 class="big">Regeln und Quellen</h1><div class="card"><h3>Einstufung</h3><p class="meta">PEP-pflichtig ab mindestens 2 Monaten Dauer, 2 Abteilungen und 0,3 FTE oder 30 000 € Aufwand.</p><h3>Spur</h3><p class="meta">Drei Ja/Nein-Fragen: A (Device with Software), B (Software on Device), C (Software & Data).</p><h3>Generationsstufe</h3><p class="meta">Full ab 60 % Neuentwicklungsanteil, Light bis 20 %, sonst Standard. Bei Hardwareänderung zählt der höhere Anteil von HW und SW.</p><p class="warn">Die Schwellen 20 % und 60 % sowie die Max-Regel sind Annahmen, nicht abgestimmt.</p><h3>Bausteine</h3><p class="meta">Pflichtkern plus Bausteinpool. Vorgeschlagene Bausteine können nur mit Begründung abgewählt werden.</p><h3>Freigabe</h3><p class="meta">MS Gate Committee prüft, PGB entscheidet. Spur an G1, Stufe und Bausteine an G2, Light gemeinsam an G1+2.</p><h3>Quelle</h3><p class="meta" style="margin:0">Studienarbeit T3100, Kap. 5.7 und Tab. 16 (A-Full 8, B-Standard 5, B-Light 3, C-Full 5 Reviews).</p></div>';
 }
 function vOpen() {
   setBar(back("#/mehr", "Mehr"), "Offene Fragen", roleBtn());
-  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Welches gilt für die Anzeige?", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Wer entscheidet im PPB, und wie wird der Entscheid dokumentiert?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wie werden Reviews je Pfad für die Ressourcenplanung gezählt?", "Wer entscheidet bei Review-Meilensteinen (Design Freeze, Serienfreigabe, Pilotfreigabe)? Die App nutzt wie bei Gates: MS Gate Committee prüft, PPB entscheidet.", "Welche Nachweise sind je Liefergegenstand Pflicht, und wo liegen die Dateien produktiv? Aktuell nur lokal im Browser.", "Bleiben Gate-Termine in der App oder kommen sie aus der Roadmap?"];
+  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Welches gilt für die Anzeige?", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Wer entscheidet im PGB, und wie wird der Entscheid dokumentiert?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wie werden Reviews je Pfad für die Ressourcenplanung gezählt?", "Wer entscheidet bei Review-Meilensteinen (Design Freeze, Serienfreigabe, Pilotfreigabe)? Die App nutzt wie bei Gates: MS Gate Committee prüft, PGB entscheidet.", "Welche Nachweise sind je Liefergegenstand Pflicht, und wo liegen die Dateien produktiv? Aktuell nur lokal im Browser.", "Bleiben Gate-Termine in der App oder kommen sie aus der Roadmap?"];
   view.innerHTML = '<h1 class="big">Offene Fragen</h1><ul class="group">' + Q.map((q, i) => '<li class="row"><span class="t"><span class="s">Frage ' + (i + 1) + "</span>" + esc(q) + "</span></li>").join("") + "</ul>";
 }
 
@@ -296,7 +296,7 @@ function vWizard() {
     if (r.ok) { let lp = -1; h += '<h2 class="sec">Ablauf</h2><ol class="tl">'; r.order.forEach(o => { const ph = phaseOf(o); if (ph !== lp) { h += '<li class="ph">' + esc(PH[ph]) + "</li>"; lp = ph; } h += '<li class="' + (o.rv ? "rv" : "") + '">' + esc(o.n) + (o.t ? " " + esc(o.t) : "") + "</li>"; }); h += "</ol>";
       h += '<h2 class="sec">Bausteine</h2><ul class="group">' + r.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") + r.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc(c.why[m.id] || "Begründung fehlt") + "</span></span></li>").join("") + "</ul>";
       h += '<h2 class="sec">Liefergegenstände (' + esc(r.proc) + ')</h2><div class="group" style="padding-right:0">' + delivs(r).map(x => x.gone ? "" : '<details class="dv"><summary>' + esc(x.t) + " · " + x.items.length + '</summary><ul>' + (x.items.length ? x.items.map(i => "<li>" + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt. Im Regelwerk ergänzen.</li>") + "</ul></details>").join("") + "</div>"; }
-    h += '<p class="foot">' + (S.state.role === "PL" ? "Nach dem Einreichen prüft das MS Gate Committee, das PPB entscheidet." : "Einreichen ist nur in der Rolle Projektleitung möglich.") + "</p>";
+    h += '<p class="foot">' + (S.state.role === "PL" ? "Nach dem Einreichen prüft das MS Gate Committee, das PGB entscheidet." : "Einreichen ist nur in der Rolle Projektleitung möglich.") + "</p>";
   }
   h += '<div class="actionbar">' + (w.step ? '<button class="btn back" data-act="wizprev">Zurück</button>' : "") + (w.step < 5 ? '<button class="btn primary" data-act="wiznext">Weiter</button>' : '<button class="btn primary" data-act="wizsubmit"' + (S.state.role === "PL" ? "" : " disabled") + ">Einreichen</button>") + "</div></div></div>";
   view.innerHTML = h;

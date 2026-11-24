@@ -143,8 +143,8 @@ const DEMO = [
   {n: "Schnittstelle Echo", pc: 0, pl: "Muster, E.", q: [1, 0, 1], hw: 0, sw: 15, opt: {}, done: 0, st: "pe", stage: "ms", wait: 1, files: 1},
   {n: "Datenportal Foxtrot", pc: 2, pl: "Beispiel, F.", q: [0, 1, 1], hw: 0, sw: 40, opt: {}, done: 1, st: "bl", date: -5, files: 0, note: "Wartet auf Freigabe der Schnittstellenspezifikation"},
   {n: "Sensorik Golf", pc: 1, pl: "Muster, G.", q: [1, 1, 0], hw: 45, sw: 30, opt: {}, done: 1, st: "re", files: 2, note: "MS Gate Committee: Risikoanalyse ist unvollständig"},
-  {n: "Update-Service Hotel", pc: 2, pl: "Beispiel, H.", q: [0, 1, 1], hw: 0, sw: 10, opt: {}, done: 0, st: "ho", files: 0, note: "PPB Hold: Priorität neu bewerten"},
-  {n: "Adapter India", pc: 0, pl: "Muster, I.", q: [1, 1, 1], hw: 90, sw: 20, opt: {}, done: 2, st: "ki", files: 1, note: "PPB Kill: Markt entfällt"},
+  {n: "Update-Service Hotel", pc: 2, pl: "Beispiel, H.", q: [0, 1, 1], hw: 0, sw: 10, opt: {}, done: 0, st: "ho", files: 0, note: "PGB Hold: Priorität neu bewerten"},
+  {n: "Adapter India", pc: 0, pl: "Muster, I.", q: [1, 1, 1], hw: 90, sw: 20, opt: {}, done: 2, st: "ki", files: 1, note: "PGB Kill: Markt entfällt"},
   {n: "Cloud-Backend Juliett", pc: 2, pl: "Beispiel, J.", q: [0, 1, 1], hw: 0, sw: 65, opt: {}, done: 99, st: "do", files: 5},
   {n: "Zubehör Kilo", pc: 0, pl: "Muster, K.", q: [1, 0, 0], hw: 0, sw: 8, opt: {}, done: 0, st: "li", files: 0, thr: [1, 0, 0]},
   {n: "Gerät Lima", pc: 1, pl: "Beispiel, L.", q: [1, 1, 0], hw: 70, sw: 40, opt: {}, done: 4, st: "on", date: 9, files: 6},
@@ -166,13 +166,13 @@ export async function loadDemo() {
     lg(60, "Projektleitung (" + d.pl + ")", "Vorhaben mit Konfiguration " + r.path + " angelegt");
     if (!r.ok) { p.note = "unter den Projektschwellen"; p.next = "–"; state.P.push(p); continue; }
     const ord = r.order, nDone = Math.min(d.done, ord.length);
-    ord.forEach((o, i) => { const s = stepOf(p, o.n); if (i < nDone) { s.st = "ok"; s.decided = iso(50 - i * 8); s.subAt = iso(55 - i * 8); s.n = 1; if (o.n === "G1" || o.n === "G1+2") p.appr.spur = true; if (o.n === "G2" || o.n === "G1+2") { p.appr.spur = true; p.appr.stufe = true; } lg(50 - i * 8, "PPB", "Go: " + stepLabel(o) + " freigegeben"); } });
+    ord.forEach((o, i) => { const s = stepOf(p, o.n); if (i < nDone) { s.st = "ok"; s.decided = iso(50 - i * 8); s.subAt = iso(55 - i * 8); s.n = 1; if (o.n === "G1" || o.n === "G1+2") p.appr.spur = true; if (o.n === "G2" || o.n === "G1+2") { p.appr.spur = true; p.appr.stufe = true; } lg(50 - i * 8, "PGB", "Go: " + stepLabel(o) + " freigegeben"); } });
     const cs = ord[nDone] || null;
     p.last = nDone ? stepLabel(ord[nDone - 1]) : "–"; p.next = cs ? stepLabel(cs) : "–";
-    if (d.st === "pe" && cs) { const s = stepOf(p, cs.n); s.st = "sub"; s.subAt = iso(d.wait); s.n = 1; p.subAt = s.subAt; p.submitted = fmtD(dat(-d.wait)); p.date = ""; if (p.stage === "ppb") p.rec = "Empfohlen (MS Gate Committee, " + fmtD(dat(-Math.max(0, d.wait - 2))) + ")"; lg(d.wait, "Projektleitung (" + d.pl + ")", stepLabel(cs) + " eingereicht"); if (p.stage === "ppb") lg(Math.max(0, d.wait - 2), "MS Gate Committee", stepLabel(cs) + ": Prüfung abgeschlossen, Empfehlung an PPB"); }
+    if (d.st === "pe" && cs) { const s = stepOf(p, cs.n); s.st = "sub"; s.subAt = iso(d.wait); s.n = 1; p.subAt = s.subAt; p.submitted = fmtD(dat(-d.wait)); p.date = ""; if (p.stage === "ppb") p.rec = "Empfohlen (MS Gate Committee, " + fmtD(dat(-Math.max(0, d.wait - 2))) + ")"; lg(d.wait, "Projektleitung (" + d.pl + ")", stepLabel(cs) + " eingereicht"); if (p.stage === "ppb") lg(Math.max(0, d.wait - 2), "MS Gate Committee", stepLabel(cs) + ": Prüfung abgeschlossen, Empfehlung an PGB"); }
     if (d.st === "re" && cs) { stepOf(p, cs.n).st = "mod"; lg(4, "MS Gate Committee", stepLabel(cs) + ", Zurück an PL: " + d.note.replace("MS Gate Committee: ", "")); }
-    if (d.st === "ho" && cs) { stepOf(p, cs.n).st = "hold"; lg(8, "PPB", stepLabel(cs) + ", Hold: " + d.note.replace("PPB Hold: ", "")); }
-    if (d.st === "ki" && cs) { stepOf(p, cs.n).st = "kill"; p.next = "abgebrochen"; lg(10, "PPB", stepLabel(cs) + ", Kill: " + d.note.replace("PPB Kill: ", "")); }
+    if (d.st === "ho" && cs) { stepOf(p, cs.n).st = "hold"; lg(8, "PGB", stepLabel(cs) + ", Hold: " + d.note.replace("PGB Hold: ", "")); }
+    if (d.st === "ki" && cs) { stepOf(p, cs.n).st = "kill"; p.next = "abgebrochen"; lg(10, "PGB", stepLabel(cs) + ", Kill: " + d.note.replace("PGB Kill: ", "")); }
     if (d.st === "do") { p.status = "do"; p.next = "–"; p.date = ""; }
     // Nachweis-Dateien (kleine Textdateien im Browser-Speicher), verteilt auf erledigte und laufende Schritte
     const hold = ord.slice(0, Math.min(ord.length, nDone + 1));
@@ -187,11 +187,11 @@ export async function loadDemo() {
   state.seq = Math.max(state.seq, 1); norm(); save(); return state.P.filter(p => p.ex).length;
 }
 
-/* ---------- Freigabe-Workflow: MS Gate Committee prüft, PPB entscheidet ---------- */
+/* ---------- Freigabe-Workflow: MS Gate Committee prüft, PGB entscheidet ---------- */
 export function recommend(id) {
   const p = byId(id), o = p && subStep(p); if (!p || !o || state.role !== "MS" || p.status !== "pe" || p.stage !== "ms") return null;
-  p.stage = "ppb"; p.rec = "Empfohlen (MS Gate Committee, " + fmtD(TODAY) + ")"; logE(p, "MS Gate Committee", stepLabel(o) + ": Prüfung abgeschlossen, Empfehlung an PPB");
-  save(); return p.name + ": Empfehlung an PPB übergeben";
+  p.stage = "ppb"; p.rec = "Empfohlen (MS Gate Committee, " + fmtD(TODAY) + ")"; logE(p, "MS Gate Committee", stepLabel(o) + ": Prüfung abgeschlossen, Empfehlung an PGB");
+  save(); return p.name + ": Empfehlung an PGB übergeben";
 }
 export function goDecision(id) {
   const p = byId(id), o = p && subStep(p); if (!p || !o || state.role !== "PPB" || p.status !== "pe" || p.stage !== "ppb") return null;
@@ -200,14 +200,14 @@ export function goDecision(id) {
   const had = p.cfgPending; delete p.cfgPending;
   p.last = stepLabel(o); const nx = curStep(p); p.next = nx ? stepLabel(nx) : "–"; p.date = "";
   p.status = nx ? "on" : "do"; p.stage = "ms"; p.rec = ""; p.note = ""; p.fresh = true;
-  logE(p, "PPB", "Go: " + stepLabel(o) + " freigegeben" + (o.n === "G1" ? " (Spur " + r.sp + ")" : "") + (had ? ", Konfigurationsänderung " + had.from + " → " + had.to + " freigegeben" : ""));
+  logE(p, "PGB", "Go: " + stepLabel(o) + " freigegeben" + (o.n === "G1" ? " (Spur " + r.sp + ")" : "") + (had ? ", Konfigurationsänderung " + had.from + " → " + had.to + " freigegeben" : ""));
   save(); return p.name + ": " + stepLabel(o) + " freigegeben" + (nx ? "" : ", Vorhaben abgeschlossen");
 }
 export const REASONS = {
   ret: {t: "Zurück an die Projektleitung", role: "MS", st: "re", ss: "mod", who: "MS Gate Committee", pre: "MS Gate Committee: ", log: "Zurück an PL", txt: "Was fehlt oder ist unklar?", next: "Überarbeiten und erneut einreichen", ok: "Zurücksenden", hint: "Die Projektleitung sieht den Kommentar im Vorhaben."},
-  modify: {t: "Modify: Nachbesserung", role: "PPB", st: "re", ss: "mod", who: "PPB", pre: "PPB Modify: ", log: "Modify", txt: "", next: "Überarbeiten und erneut einreichen", ok: "Modify entscheiden", hint: "Die Projektleitung bessert nach und reicht erneut ein."},
-  hold: {t: "Hold: Vorhaben pausieren", role: "PPB", st: "ho", ss: "hold", who: "PPB", pre: "PPB Hold: ", log: "Hold", txt: "", next: "Hold, Wiederaufnahme durch PPB", ok: "Hold entscheiden", hint: "Das PPB kann den Hold später aufheben."},
-  kill: {t: "Kill: Vorhaben abbrechen", role: "PPB", st: "ki", ss: "kill", who: "PPB", pre: "PPB Kill: ", log: "Kill", txt: "", next: "abgebrochen", ok: "Kill entscheiden", hint: "Das Vorhaben wird beendet."}
+  modify: {t: "Modify: Nachbesserung", role: "PPB", st: "re", ss: "mod", who: "PGB", pre: "PGB Modify: ", log: "Modify", txt: "", next: "Überarbeiten und erneut einreichen", ok: "Modify entscheiden", hint: "Die Projektleitung bessert nach und reicht erneut ein."},
+  hold: {t: "Hold: Vorhaben pausieren", role: "PPB", st: "ho", ss: "hold", who: "PGB", pre: "PGB Hold: ", log: "Hold", txt: "", next: "Hold, Wiederaufnahme durch PGB", ok: "Hold entscheiden", hint: "Das PGB kann den Hold später aufheben."},
+  kill: {t: "Kill: Vorhaben abbrechen", role: "PPB", st: "ki", ss: "kill", who: "PGB", pre: "PGB Kill: ", log: "Kill", txt: "", next: "abgebrochen", ok: "Kill entscheiden", hint: "Das Vorhaben wird beendet."}
 };
 export function reason(id, k, text) {
   const p = byId(id), c = REASONS[k], t = (text || "").trim(), o = p && subStep(p);
@@ -219,7 +219,7 @@ export function reason(id, k, text) {
 export function resume(id) {
   const p = byId(id); if (!p || state.role !== "PPB" || p.status !== "ho") return null;
   const o = r2(p); if (o) stepOf(p, o.n).st = "sub";
-  p.status = "pe"; p.stage = "ppb"; p.note = ""; p.fresh = true; logE(p, "PPB", "Hold aufgehoben, erneute Entscheidung"); save(); return "Hold aufgehoben: " + p.name;
+  p.status = "pe"; p.stage = "ppb"; p.note = ""; p.fresh = true; logE(p, "PGB", "Hold aufgehoben, erneute Entscheidung"); save(); return "Hold aufgehoben: " + p.name;
 }
 function r2(p) { const r = compute(p.c); return r.ok ? r.order.find(o => stepOf(p, o.n).st === "hold") || null : null; }
 export function setRole(r) { if (hasK(ROLES, r)) { state.role = r; save(); } }

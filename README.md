@@ -1,6 +1,6 @@
 # PFAD – PEP-Konfigurator (App)
 
-Installierbare Web-App (PWA) zum Konfigurieren des PEP nach dem Modell der Studienarbeit (Kap. 5.7): Einstufung, Spur A/B/C, Generationsstufe Full/Standard/Light, Bausteine mit Begründung bei Abwahl, zweistufige Freigabe (MS Gate Committee prüft, PPB entscheidet), Cockpit, CSV-/JSON-Export. Aufbau und Bedienung wie SATZ, Farben nur Hella-Gutmann-Grün #007d40, Weiß #ffffff und Schwarz.
+Installierbare Web-App (PWA) zum Konfigurieren des PEP nach dem Modell der Studienarbeit (Kap. 5.7): Einstufung, Spur A/B/C, Generationsstufe Full/Standard/Light, Bausteine mit Begründung bei Abwahl, zweistufige Freigabe (MS Gate Committee prüft, PGB entscheidet), Cockpit, CSV-/JSON-Export. Aufbau und Bedienung wie SATZ, Farben nur Hella-Gutmann-Grün #007d40, Weiß #ffffff und Schwarz.
 
 ## Starten
 ES-Module und Service Worker brauchen einen Server (nicht `file://`):

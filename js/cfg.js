@@ -8,10 +8,15 @@ import {rules} from "./rules.js";
 
 export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const clone = c => JSON.parse(JSON.stringify(c));
+// Regelwerk, mit dem der Konfigurator rechnet: beim Bearbeiten eines laufenden Vorhabens dessen festgeschriebene Fassung
+let RR = null;
+export const useRules = r => { RR = r || null; };
+const cmp = c => compute(c, RR || undefined);
+export const ctxRules = () => RR || rules();
 
 // Kennzahlen einer Konfiguration
 export function sumOf(c) {
-  const r = compute(c);
+  const r = cmp(c);
   if (!r.ok) return {r, ok: false, gates: 0, rv: 0, dv: 0, path: r.path, marks: [], per: [0, 0, 0, 0, 0], sig: "none"};
   const D = delivs(r), per = D.map(x => x.gone ? 0 : x.items.length);
   const marks = r.order.map(o => "S:" + o.n).concat(r.on.map(m => "M:" + m.id));
@@ -42,15 +47,15 @@ export const chips = (list, empty) => list.length
 export const SPUREN = [
   {k: "A", q: [1, 1, 1], t: "Spur A", n: "Device with Software", hw: "wird entwickelt und führt", takt: "Muster, Design Freeze, Serienanlauf"},
   {k: "Bh", q: [1, 1, 0], t: "Spur B", n: "Software on Device, mit Hardware", hw: "wird mitentwickelt", takt: "Sprints plus Muster und Abgleichpunkte"},
-  {k: "B", q: [1, 0, 1], t: "Spur B", n: "Software on Device, ohne Hardware", hw: "bestehendes Gerät", takt: "Sprints und Release-Management"},
+  {k: "B", q: [1, 0, 1], t: "Spur B", n: "Software on Device, ohne Hardware", hw: "bestehendes Gerät", takt: "Sprints, Abgleichpunkte, Release-Management"},
   {k: "C", q: [0, 1, 1], t: "Spur C", n: "Software & Data", hw: "kein eigenes Gerät", takt: "Sprints, laufende Releases, Kennzahlen"}
 ];
 export const spurKey = r => r.sp === "B" ? (r.hc ? "Bh" : "B") : r.sp;
-export function withSpur(c, s) { const x = clone(c), k0 = spurKey(compute(c)); x.q = [...s.q]; if (spurKey(compute(x)) !== k0) x.sel = {}; return x; }
-export function stufeValue(st) { const T = rules().thr; return st === "Light" ? Math.max(0, T.light - 5) : st === "Full" ? Math.min(100, T.full + 15) : Math.round((T.light + T.full) / 2); }
-export function withStufe(c, st) { const x = clone(c), v = stufeValue(st); x.sw = v; if (compute(c).hc) x.hw = v; return x; }
+export function withSpur(c, s) { const x = clone(c), k0 = spurKey(cmp(c)); x.q = [...s.q]; if (spurKey(cmp(x)) !== k0) x.sel = {}; return x; }
+export function stufeValue(st) { const T = ctxRules().thr; return st === "Light" ? Math.max(0, T.light - 5) : st === "Full" ? Math.min(100, T.full + 15) : Math.round((T.light + T.full) / 2); }
+export function withStufe(c, st) { const x = clone(c), v = stufeValue(st); x.sw = v; if (cmp(c).hc) x.hw = v; return x; }
 export function withMod(c, m, on) { const x = clone(c); if (m.ty === "spur") { x.sel = x.sel || {}; x.sel[m.id] = on; } else { x.opt = x.opt || {}; x.opt[m.id] = on ? 1 : 0; } return x; }
-export function withPreset(c, p) { const x = clone(c); Object.assign(x, {thr: [1, 1, 1], q: [...p.q], hw: p.hw, sw: p.sw, opt: {...p.opt}, sel: {}}); return x; }
+export function withPreset(c, p) { const x = clone(c); Object.assign(x, {thr: [1, 1, 1], q: [...p.q], hw: p.hw, sw: p.sw, opt: {...p.opt}, sel: {}, ts: []}); return x; }
 
 // Zusammenfassungszeile oben (entspricht Fahrzeugpreis und Leasingrate)
 export function bar(s, delta, fresh, next) {

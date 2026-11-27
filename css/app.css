@@ -332,3 +332,16 @@ details.cq summary{cursor:pointer;font-weight:600;min-height:32px}
 }
 @media print{.cnav,.cbar .cb-next,.actionbar{display:none}#cfgBar{position:static}}
 .cb-d:empty{display:none}
+/* 1.7.0: Leitfragen, Prüfung, Teilsysteme, Regelwerk-Zuordnung */
+.rad{display:flex;flex-wrap:wrap;gap:6px 16px;margin:4px 0 10px}
+.rad label{display:flex;align-items:center;gap:6px;min-height:36px;font-size:.9rem}
+input[type=radio]{width:20px;height:20px;accent-color:var(--green);margin:0}
+.lfl{margin:6px 0 10px;padding-left:18px;font-size:.88rem}.lfl li{margin:4px 0}
+#dlg h3{margin:16px 0 6px;font-size:.95rem}
+.tsrow{display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;margin:0 0 8px}
+.tsrow input,.tsrow select{min-height:40px}
+@media (max-width:520px){.tsrow{grid-template-columns:1fr 1fr}.tsrow input{grid-column:1/-1}}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+@media (max-width:520px){.two{grid-template-columns:1fr}}
+.row[aria-pressed="true"]{background:var(--tint-soft)}
+.btn.small[disabled],.chipb[disabled]{opacity:.45}

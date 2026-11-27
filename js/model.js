@@ -1,16 +1,24 @@
 // Konfigurationslogik (Studienarbeit, Kap. 5.7). Keine DOM-Zugriffe, daher einzeln testbar.
+// Jede Berechnung kann ein festgeschriebenes Regelwerk bekommen (rr): Vorhaben nach dem ersten Go rechnen mit ihrer Fassung.
 import {PH} from "./data.js";
-import {rules, mods, procOf, gateItems} from "./rules.js";
+import {rules, mods, gateItems, asRules} from "./rules.js";
 
-export function compute(c) {
-  const ok = c.thr.every(Boolean), MODS = mods(), TH = rules().thr;
+// Neuentwicklungsanteil: aus der Teilsystemliste (angepasst oder neu = Gestalt- oder Prinzipvariation), sonst Schätzwert
+export function shares(c) {
+  const L = Array.isArray(c.ts) ? c.ts : [], f = d => { const x = L.filter(t => t.d === d); return x.length ? Math.round(x.filter(t => t.s !== "u").length / x.length * 100) : null; };
+  const h = f("HW"), s = f("SW");
+  return {hw: h ?? c.hw, sw: s ?? c.sw, hwList: h !== null, swList: s !== null};
+}
+export function compute(c, rr0) {
+  const rr = asRules(rr0), ok = c.thr.every(Boolean), MODS = mods(rr), TH = rr.thr, sh = shares(c);
   const sp = !c.q[0] ? "C" : (!c.q[1] ? "B" : (c.q[2] ? "A" : "B"));
   const hc = !!(c.q[0] && c.q[1]);
-  const v = hc ? Math.max(c.hw, c.sw) : c.sw; // Annahme: bei Hardwareänderung zählt der höhere Anteil
+  const v = hc ? Math.max(sh.hw, sh.sw) : sh.sw; // Annahme: bei Hardwareänderung zählt der höhere Anteil
   const st = v >= TH.full ? "Full" : v <= TH.light ? "Light" : "Standard";
   const avail = m => {
     if (m.id === "r1") return st !== "Full";
-    if (["s1", "s2", "s3"].includes(m.id)) return sp === "A" || (sp === "B" && hc);
+    if (m.id === "s2") return sp === "A" || sp === "B"; // Abgleichpunkte in Spur A und B (Bausteinpool)
+    if (["s1", "s3"].includes(m.id)) return sp === "A" || (sp === "B" && hc);
     if (m.id === "s4") return sp === "A";
     return true;
   };
@@ -31,26 +39,29 @@ export function compute(c) {
   const ab = MODS.filter(m => m.ty === "spur" && avail(m) && defOn(m) && !isOn(m));
   const rv = on.filter(m => m.rv).map(m => ({n: m.rv.n, t: m.t, x: m.ph + m.rv.p, r: m.rv.r, rv: 1, mid: m.id}));
   const order = [...gates, ...rv].sort((a, b) => a.x - b.x);
-  return {ok, sp, hc, st, proc: procOf(sp, hc), light, avail, defOn, isOn, gates, rv, order, on, ab, n: ok ? order.length : 0, path: ok ? sp + "-" + st : "ohne PEP"};
-}
-// Liefergegenstände eines Schritts: bei Gates die der Phase, bei Review-Meilensteinen der Baustein, der den Review auslöst
-export function stepDelivs(r, o) {
-  if (o.mid) { const b = mods().find(x => x.id === o.mid); return b ? [b.d] : []; }
-  const d = delivs(r)[phaseOf(o)]; return d && !d.gone ? d.items.map(i => i.t) : [];
+  return {ok, sp, hc, st, sh, light, avail, defOn, isOn, gates, rv, order, on, ab, rr, ver: rr.ver, n: ok ? order.length : 0, path: ok ? sp + "-" + st : "ohne PEP"};
 }
 export const phaseOf = o => Math.min(4, Math.max(0, Math.ceil(o.x) - 1));
 
-// Liefergegenstände je Phase: Regelwerk (Gate, Prozess, Stufe) plus gewählte Bausteine
+// Liefergegenstände je Phase: Regelwerk (Gate der Phase, Spur, Stufe) plus gewählte Bausteine.
+// Gilt in jeder Phase, auch wenn die Phase kein eigenes Gate hat (dann prüft sie das nächste Gate).
 const PG = ["G1", "G2", "G3", "G4", "G5"];
 export function delivs(r) {
   return PH.map((t, i) => {
     if (r.light && i === 0) return {t, gone: true, items: []};
-    const has = r.gates.some(g => g.n === PG[i] || (i === 1 && g.n === "G1+2"));
     const key = r.light && i === 1 ? "G1+2" : PG[i];
-    const items = (has ? gateItems(key, r.proc, r.st) : []).map(x => ({t: x.t, bs: false, kat: x.kat}))
-      .concat(r.on.filter(m => m.ph === i).map(m => ({t: m.d, bs: true, kat: "D"})));
+    const items = gateItems(key, r.sp, r.st, r.rr).map(x => ({t: x.t, bs: false, kat: x.kat, kern: x.kern, lf: x.lf, wv: x.wv}))
+      .concat(r.on.filter(m => m.ph === i || (r.light && i === 1 && m.ph === 0)).map(m => ({t: m.d, bs: true, kat: "D", kern: false})));
     return {t, gone: false, items};
   });
 }
+// Liefergegenstände eines Schritts: Gate = alle Phasen seit dem letzten Gate; Review-Meilenstein = Baustein, der ihn auslöst
+export function stepDelivs(r, o) {
+  if (o.mid) { const b = mods(r.rr).find(x => x.id === o.mid); return b ? [b.d] : []; }
+  const D = delivs(r), g = r.gates.findIndex(x => x.n === o.n), prev = g > 0 ? phaseOf(r.gates[g - 1]) : -1;
+  const out = []; for (let i = prev + 1; i <= phaseOf(o); i++) if (!D[i].gone) D[i].items.forEach(x => { if (!out.includes(x.t)) out.push(x.t); });
+  return out;
+}
 export const scopeOf = (p, r) => r.light ? "G1+2: Spur, Stufe und Bausteine" : (!p.appr.spur ? "G1: Spur" : "G2: Stufe und Bausteine");
 export const fmtD = d => d ? d.split("-").reverse().join(".") : "–";
+export {rules};

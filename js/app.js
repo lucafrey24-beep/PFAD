@@ -1,12 +1,12 @@
 // PEP-App: Oberfläche, Routing, Ereignisse. Aufbau wie SATZ (ES-Module, Hash-Routing, Ereignis-Delegation über data-act).
-import {TODAY, PCS, PH, SPN, SPDESC, STATUS, ROLES, PRESETS} from "./data.js";
-import {compute, delivs, phaseOf, stepDelivs, fmtD} from "./model.js";
+import {TODAY, PCS, PH, SPN, SPDESC, STATUS, ROLES, PRESETS, LF, CRK, WP_LIMIT, RG, TSS} from "./data.js";
+import {compute, delivs, phaseOf, stepDelivs, fmtD, shares} from "./model.js";
 import * as F from "./files.js";
 import * as RW from "./rules.js";
 import * as S from "./store.js";
 import * as C from "./cfg.js";
 
-const VERSION = "1.6.2";
+const VERSION = "1.7.0";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -48,7 +48,7 @@ view.addEventListener("scroll", collapse, {passive: true});
 const roleBtn = () => '<button class="rolechip" data-act="roledlg" aria-label="Rolle wechseln, aktuell ' + esc(ROLES[S.state.role]) + '">' + esc(ROLES[S.state.role]) + "</button>";
 const brand = '<a class="wordmark" href="#/vorhaben" aria-label="PFAD, zu den Vorhaben">PFAD<span>.</span></a>';
 const back = (href, label) => '<a class="navbtn strong" href="' + href + '">‹ ' + esc(label) + "</a>";
-function badge() { const n = S.mine(S.state.role).length; const b = $("#tbQ"); b.textContent = n ? String(n) : ""; b.setAttribute("aria-label", n ? n + " warten auf Sie" : ""); }
+function badge() { const n = S.todo(S.state.role); const b = $("#tbQ"); b.textContent = n ? String(n) : ""; b.setAttribute("aria-label", n ? n + " warten auf Sie" : ""); }
 
 function render() {
   if (dlg.open) dlg.close();
@@ -72,8 +72,8 @@ function filtered() {
 function listRows() {
   const L = filtered();
   if (!L.length) return '<div class="empty">' + (S.state.P.length ? "Keine Vorhaben für diese Auswahl. Filter ändern oder die Suche leeren." : "Noch keine Vorhaben. Unter Neu legen Sie das erste an.") + "</div>";
-  return '<ul class="group">' + L.map(p => { const r = compute(p.c), pr = S.progress(p), late = S.overdue(p);
-    return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.id) + " · " + esc(p.pc) + " · " + esc(p.pl) + '</span><span class="s">' + stBadge(p) + (p.status === "pe" ? " · " + esc(subLbl(p)) + ": " + (p.stage === "ppb" ? "wartet auf PGB" : "wartet auf MS Gate Committee") : "") + (late ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="s">Schritt ' + pr.done + " von " + pr.total + '</span><span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr">' + pathPill(r) + '</span><span class="chev" aria-hidden="true">›</span></a></li>';
+  return '<ul class="group">' + L.map(p => { const r = S.cp(p), pr = S.progress(p), late = S.overdue(p);
+    return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.id) + " · " + esc(p.pc) + " · " + esc(p.pl) + '</span><span class="s">' + stBadge(p) + (p.status === "pe" ? " · " + esc(subLbl(p)) + ": " + stageTxt(p) : "") + (p.open.length ? " · " + p.open.length + " offene Punkte" : "") + (late ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="s">Schritt ' + pr.done + " von " + pr.total + '</span><span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr">' + pathPill(r) + '</span><span class="chev" aria-hidden="true">›</span></a></li>';
   }).join("") + "</ul>";
 }
 function vList() {
@@ -87,37 +87,70 @@ function vDetail(r) {
   const p = S.byId(r.id);
   setBar(back("#/vorhaben", "Vorhaben"), "", roleBtn());
   if (!p) { view.innerHTML = '<h1 class="big">Nicht gefunden</h1><div class="empty">Dieses Vorhaben gibt es nicht (mehr).</div>'; return; }
-  const c = compute(p.c);
+  const c = S.cp(p), act = !["li", "ki", "do"].includes(p.status), pl = S.state.role === "PL";
   let h = '<p class="eyebrow">' + esc(p.id) + " · " + esc(p.pc) + '</p><h1 class="big">' + esc(p.name) + '</h1><p>' + pathPill(c) + " &nbsp;" + stBadge(p) + "</p>";
+  h += '<p class="meta">' + (p.rx ? "Regelwerk v" + p.rx.ver + " festgeschrieben" + (p.fix ? " am " + esc(fmtD(p.fix.at)) : "") + (RW.rules().ver !== p.rx.ver ? ". Aktuell gilt v" + RW.rules().ver + ", dieses Vorhaben bleibt bei v" + p.rx.ver + "." : ".") : "Noch kein Go: es gilt das aktuelle Regelwerk v" + RW.rules().ver + ". Beim ersten Go wird es festgeschrieben.") + "</p>";
   if (p.note) h += '<div class="warn">' + esc(p.note) + "</div>";
-  if (p.status === "pe") {
-    h += '<div class="qitem"><h3>' + (p.stage === "ppb" ? "Wartet auf PGB-Entscheidung" : "Wartet auf Prüfung durch das MS Gate Committee") + '</h3><p class="meta">Zur Freigabe: ' + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + "</p>" + evLine(p) + actionsFor(p) + "</div>";
-  }
+  if (p.status === "pe") h += '<div class="qitem"><h3>' + esc(stageLong(p)) + '</h3><p class="meta">Zur Freigabe: ' + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + "</p>" + evLine(p) + subInfo(p, true) + actionsFor(p) + "</div>";
   const ps = c.ok ? (S.subStep(p) || S.curStep(p)) : null;
   if (ps && p.status !== "do") {
     h += stepPanel(p, c, ps, S.canEditFiles(p, ps.n));
     if (S.canSubmitStep(p)) h += '<button class="btn primary" data-act="stepsub" data-id="' + esc(p.id) + '">Zur Freigabe einreichen: ' + esc(S.stepLabel(ps)) + "</button>";
   }
+  if (p.open.length) h += '<h2 class="sec">Offene Punkte aus Go (' + p.open.length + ')</h2><ul class="group">' + p.open.map(x => '<li class="row"><span class="t">' + esc(x.t) + '<span class="s">' + esc(x.k) + " · " + esc(fmtD(x.at)) + "</span></span></li>").join("") + "</ul>";
   if (c.ok) {
     h += '<h2 class="sec">Ablauf (' + c.n + " Reviews)</h2><ol class=\"tl\">";
     let lastPh = -1;
-    c.order.forEach((o, i) => { const ph = phaseOf(o); if (ph !== lastPh) { h += '<li class="ph">' + esc(PH[ph]) + "</li>"; lastPh = ph; }
+    c.order.forEach(o => { const ph = phaseOf(o); if (ph !== lastPh) { h += '<li class="ph">' + esc(PH[ph]) + "</li>"; lastPh = ph; }
       const x = S.stepOf(p, o.n); h += '<li class="' + (o.rv ? "rv " : "") + (x.st === "ok" ? "done " : "") + (ps && ps.n === o.n ? "next" : "") + '">' + esc(o.n) + (o.t ? " " + esc(o.t) : "") + (x.st !== "open" || x.files.length ? "<small>" + [STX[x.st] + (x.st === "ok" ? " " + dstr(x.decided) : ""), x.files.length ? x.files.length + " Datei" + (x.files.length > 1 ? "en" : "") : ""].filter(Boolean).join(" · ") + "</small>" : "") + "</li>"; });
     h += "</ol>";
-    const olds = c.order.filter(o => (!ps || o.n !== ps.n) && S.stepOf(p, o.n).files.length);
-    if (olds.length) h += '<h2 class="sec">Nachweise je Schritt</h2><div class="group" style="padding-right:0">' + olds.map(o => '<details class="dv"><summary>' + esc(S.stepLabel(o)) + " · " + S.stepOf(p, o.n).files.length + '</summary><ul class="fl">' + S.stepOf(p, o.n).files.map(f => fileRow(p, o.n, f, false)).join("") + "</ul></details>").join("") + "</div>";
+    const olds = c.order.filter(o => (!ps || o.n !== ps.n) && (S.stepOf(p, o.n).files.length || S.stepOf(p, o.n).ans));
+    if (olds.length) h += '<h2 class="sec">Nachweise und Angaben je Schritt</h2><div class="group" style="padding-right:0">' + olds.map(o => { const x = S.stepOf(p, o.n); return '<details class="dv"><summary>' + esc(S.stepLabel(o)) + " · " + x.files.length + ' Dateien</summary>' + ansHtml(x) + '<ul class="fl">' + x.files.map(f => fileRow(p, o.n, f, false)).join("") + "</ul></details>"; }).join("") + "</div>";
   } else h += '<div class="note">Unter den Projektschwellen: Roadmap-Eintrag ohne PEP.</div>';
+  // Änderungsanträge (Kap. 5.4): Backlog, nächstes Gate oder WP Board
+  const crSt = {backlog: "im Backlog der Spur", gate: "am nächsten Gate", wp: "beim WP Board", ok: "angenommen", rej: "abgelehnt"};
+  if (p.crs.length || (pl && act && c.ok)) h += '<h2 class="sec">Änderungsanträge</h2>' + (p.crs.length ? '<ul class="group">' + p.crs.map(x => '<li class="row"><span class="t">' + esc(x.id) + ": " + esc(x.text) + '<span class="s">' + esc(CRK[x.kat] ? CRK[x.kat].t : x.kat) + (x.eur ? " · " + x.eur.toLocaleString("de-DE") + " €" : "") + " · " + esc(crSt[x.st] || x.st) + (x.dec ? " (" + esc(x.dec) + ")" : "") + "</span></span></li>").join("") + "</ul>" : "") + (pl && act && c.ok ? '<button class="btn" data-act="crdlg" data-id="' + esc(p.id) + '">Änderungsantrag stellen</button>' : "");
+  const sh = c.sh || shares(p.c);
   h += '<h2 class="sec">Konfiguration</h2><ul class="group">' +
-    row("Spur", c.ok ? c.sp + " · " + SPN[c.sp] : "–") + row("Generationsstufe", c.ok ? c.st : "–") + row("Neuentwicklungsanteil", (c.hc ? "HW " + p.c.hw + " % · " : "") + "SW " + p.c.sw + " %") +
-    row("Referenzprodukt", p.ref || "–") + row("Projektleitung", p.pl) + row("Zuletzt freigegeben", p.last) + row("Nächster Meilenstein", p.next + (p.date ? " · " + fmtD(p.date) : "")) + row("Konfigurationsversion", String(p.ver || 1)) + "</ul>" + (S.state.role === "PL" && !["li", "ki", "do"].includes(p.status) ? '<div class="card" style="margin-top:12px"><label class="f" for="pdate">Plantermin nächster Meilenstein</label><input id="pdate" type="date" data-pdate data-id="' + esc(p.id) + '" value="' + esc(p.date || "") + '"></div>' : "") + (p.cfgPending ? '<div class="warn">Konfigurationsänderung ' + esc(p.cfgPending.from) + " → " + esc(p.cfgPending.to) + " wartet auf Freigabe am nächsten Gate.</div>" : "");
+    row("Spur", c.ok ? c.sp + " · " + SPN[c.sp] : "–") + row("Generationsstufe", c.ok ? c.st : "–") + row("Neuentwicklungsanteil", (c.hc ? "HW " + sh.hw + " % · " : "") + "SW " + sh.sw + " %" + (sh.hwList || sh.swList ? " (aus Teilsystemen)" : "")) +
+    row("Referenzprodukt", p.ref || "–") + (p.pred ? row("Vorgänger", p.pred) : "") + (p.succ ? row("Folgegeneration", p.succ) : "") + row("Projektleitung", p.pl) + row("Project Sponsor", p.sponsor || "–") + row("Product Owner", p.po || "–") +
+    (p.kpis ? row("Kennzahlen", p.kpis) : "") + row("Zuletzt freigegeben", p.last) + row("Nächster Meilenstein", p.next + (p.date ? " · " + fmtD(p.date) : "")) + row("Konfigurationsversion", String(p.ver || 1)) + "</ul>" +
+    (pl && act ? '<div class="card" style="margin-top:12px"><label class="f" for="pdate">Plantermin nächster Meilenstein</label><input id="pdate" type="date" data-pdate data-id="' + esc(p.id) + '" value="' + esc(p.date || "") + '"></div>' : "") + (p.cfgPending ? '<div class="warn">Konfigurationsänderung ' + esc(p.cfgPending.from) + " → " + esc(p.cfgPending.to) + " wartet auf Freigabe am nächsten Gate.</div>" : "");
+  if (p.c.ts.length) h += '<h2 class="sec">Teilsysteme</h2><ul class="group">' + p.c.ts.map(t => row(t.n || "ohne Namen", t.d + " · " + (TSS[t.s] || t.s))).join("") + "</ul>";
+  const pred = p.pred && S.byId(p.pred);
+  if (pred && pred.ll) h += '<div class="note"><b>Lessons Learned aus ' + esc(pred.id) + ":</b> " + esc(pred.ll) + "</div>";
+  if (p.ll) h += '<div class="note"><b>Lessons Learned:</b> ' + esc(p.ll) + "</div>";
   if (c.ok) {
     h += '<h2 class="sec">Bausteine</h2><ul class="group">' + c.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") +
       c.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc((p.c.why || {})[m.id] || "") + "</span></span></li>").join("") + "</ul>";
-    h += '<h2 class="sec">Liefergegenstände je Phase</h2><div class="group" style="padding-right:0">' + delivs(c).map(d => d.gone ? "" : '<details class="dv"><summary>' + esc(d.t) + '</summary><ul>' + d.items.map(i => '<li class="' + (i.bs ? "bs" : "") + '">' + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") + "</ul></details>").join("") + "</div>";
+    h += '<h2 class="sec">Liefergegenstände je Phase</h2>' + dvList(c) ;
   }
+  if (p.dec.length) h += '<h2 class="sec">Entscheidungen</h2><ul class="group">' + p.dec.map(x => row(x.k + ": " + S.decLabel(x.out), x.by + " · " + dstr(x.at))).join("") + "</ul>";
   if (p.log.length) h += '<h2 class="sec">Verlauf</h2><ul class="logl">' + p.log.slice().reverse().map(l => "<li><small>" + esc(l.t) + " · " + esc(l.who) + "</small><br>" + esc(l.x) + "</li>").join("") + "</ul>";
-  h += '<div class="btns">' + (S.state.role === "PL" ? '<button class="btn" data-act="edit" data-id="' + esc(p.id) + '">Konfiguration ändern</button>' : "") + '<button class="btn" data-act="nachweis" data-id="' + esc(p.id) + '">Nachweis exportieren</button></div>';
+  h += '<div class="btns">' + (pl && act ? '<button class="btn" data-act="edit" data-id="' + esc(p.id) + '">Konfiguration ändern</button>' : "") + (pl && p.status === "do" && !p.succ ? '<button class="btn primary" data-act="succ" data-id="' + esc(p.id) + '">Folgegeneration anlegen</button>' : "") + '<button class="btn" data-act="nachweis" data-id="' + esc(p.id) + '">Nachweis exportieren</button></div>';
   view.innerHTML = h;
+}
+// Liefergegenstände: Kern (alle Spuren) und spurspezifisch; in Standard und Light nur für geänderte Teilsysteme
+function dvList(r) {
+  const part = r.st !== "Full";
+  return '<div class="group" style="padding-right:0">' + delivs(r).map(d => d.gone ? "" : '<details class="dv"><summary>' + esc(d.t) + " · " + d.items.length + '</summary><ul>' + (d.items.length ? d.items.map(i => '<li class="' + (i.bs ? "bs" : "") + '">' + esc(i.t) + (i.bs ? " (Baustein)" : i.kern ? " (Kern)" : " (Spur " + r.sp + (part ? ", nur geänderte Teilsysteme" : "") + ")") + (i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt. Im Regelwerk ergänzen.</li>") + "</ul></details>").join("") + "</div>";
+}
+const lfQ = k => { const [g, i] = String(k).split(":"); return (LF[g] || [])[+i] || k; };
+// Angaben der Projektleitung und Prüfung des Committees zu einem Schritt
+function ansHtml(x) {
+  const a = x.ans || {}, v = x.rev || {}; let h = "";
+  if (a.lf) h += '<ul class="lfl">' + Object.entries(a.lf).map(([k, t]) => "<li><b>" + esc(lfQ(k)) + "</b>" + (v.lf && v.lf[k] ? ' <span class="lock">' + (v.lf[k] === "ok" ? "Committee: beantwortet" : "Committee: offen") + "</span>" : "") + "<br>" + esc(t) + "</li>").join("") + "</ul>";
+  const m = [];
+  if (a.rg) m.push("Reifegrad HW " + a.rg.hw + ", SW " + a.rg.sw + ", System " + a.rg.sys);
+  if (a.sponsor) m.push("Ressourcen bestätigt durch " + a.sponsor.name);
+  if (a.kpis) m.push("Kennzahlen: " + a.kpis);
+  if (v.at) m.push("Prüfung " + fmtD(v.at) + (v.hw && v.sw ? ", Prüfvermerk HW und SW" : "") + (v.reg ? ", Regulatorik " + ({ja: "erfüllt", nein: "nicht erfüllt", nr: "nicht relevant"}[v.reg]) : ""));
+  if (m.length) h += '<p class="meta">' + m.map(esc).join(" · ") + "</p>";
+  return h;
+}
+function subInfo(p, full) {
+  const o = S.subStep(p); if (!o) return ""; const x = S.stepOf(p, o.n), op = x.openPts || [];
+  return (full ? ansHtml(x) : "") + (op.length ? '<div class="warn"><b>Offene Punkte:</b><ul>' + op.map(t => "<li>" + esc(t) + "</li>").join("") + "</ul></div>" : "");
 }
 const subLbl = p => { const o = S.subStep(p); return o ? S.stepLabel(o) : "–"; };
 const dstr = iso => iso ? fmtD(iso.slice(0, 10)) : "–";
@@ -136,23 +169,32 @@ function stepPanel(p, c, o, edit) {
   return h + '<p class="foot" style="margin:8px 0 0">Dateien liegen nur in diesem Browser, bis 25 MB je Datei.</p></div>';
 }
 const row = (a, b) => '<li class="row"><span class="t">' + esc(a) + '</span><span class="tr">' + esc(b) + "</span></li>";
+const stageTxt = p => p.stage === "wp" ? "wartet auf WP Board" : p.stage === "ppb" ? "wartet auf PGB" : "wartet auf MS Gate Committee";
+const stageLong = p => p.stage === "wp" ? "Wartet auf Entscheidung des WP Boards (Uneinigkeit im PGB)" : p.stage === "ppb" ? "Wartet auf PGB-Entscheidung" : "Wartet auf Prüfung durch das MS Gate Committee";
 function actionsFor(p) {
   const role = S.state.role, id = esc(p.id);
-  if (role === "MS" && p.stage === "ms") return '<div class="btns"><button class="btn primary" data-act="recommend" data-id="' + id + '">Prüfung ok, an PGB empfehlen</button><button class="btn destructive" data-act="rdlg" data-k="ret" data-id="' + id + '">Zurück an PL</button></div>';
-  if (role === "PPB" && p.stage === "ppb") return '<div class="btns"><button class="btn primary" data-act="go" data-id="' + id + '">Go</button><button class="btn" data-act="rdlg" data-k="modify" data-id="' + id + '">Modify</button><button class="btn" data-act="rdlg" data-k="hold" data-id="' + id + '">Hold</button><button class="btn destructive" data-act="rdlg" data-k="kill" data-id="' + id + '">Kill</button></div>';
-  return '<p class="foot" style="margin:0">In der Rolle ' + esc(ROLES[role]) + " ist hier keine Aktion möglich" + (role !== "PL" && p.stage === "ppb" && role === "MS" ? " (liegt beim PGB)" : "") + ".</p>";
+  if (role === "MS" && p.stage === "ms") return '<div class="btns"><button class="btn primary" data-act="msdlg" data-id="' + id + '">Prüfen und empfehlen</button><button class="btn destructive" data-act="rdlg" data-k="ret" data-id="' + id + '">Zurück an PL</button></div>';
+  if (S.canDecide(p)) { const o = S.subStep(p), op = o ? (S.stepOf(p, o.n).openPts || []).length : 0;
+    return '<div class="btns"><button class="btn primary" data-act="' + (op ? "godlg" : "go") + '" data-id="' + id + '">' + (op ? "Go mit offenen Punkten" : "Go") + '</button><button class="btn" data-act="rdlg" data-k="modify" data-id="' + id + '">Modify</button><button class="btn" data-act="rdlg" data-k="hold" data-id="' + id + '">Hold</button><button class="btn destructive" data-act="rdlg" data-k="kill" data-id="' + id + '">Kill</button>' + (p.stage === "ppb" ? '<button class="btn" data-act="rdlg" data-k="wp" data-id="' + id + '">Uneinig: an WP Board</button>' : "") + "</div>"; }
+  return '<p class="foot" style="margin:0">In der Rolle ' + esc(ROLES[role]) + " ist hier keine Aktion möglich (" + esc(stageTxt(p)) + ").</p>";
 }
 
 /* ---------- Freigaben ---------- */
 function vQueue() {
   setBar(brand, "", roleBtn());
-  const role = S.state.role, mine = S.mine(role), q = S.queue(), others = q.filter(p => !mine.includes(p)), held = S.state.P.filter(p => p.status === "ho");
+  const role = S.state.role, mine = S.mine(role), q = S.queue(), others = q.filter(p => !mine.includes(p)), held = S.state.P.filter(p => p.status === "ho"), D = RW.draft();
   let h = '<h1 class="big">Freigaben</h1>';
-  h += role === "PL" ? '<div class="note">Als Projektleitung reichen Sie Konfigurationen ein. Prüfen und Entscheiden geht in den Rollen MS Gate Committee und PGB (Rolle oben rechts).</div>'
-    : '<div class="note">Zweistufig: Das MS Gate Committee prüft und empfiehlt, das PGB entscheidet (Go, Modify, Hold, Kill). Spur wird an G1, Stufe und Bausteine an G2 freigegeben. Bei Light zusammen an G1+2.</div>';
-  const card = p => { const c = compute(p.c); return '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + '</h3></a><p class="meta">' + esc(p.id) + " · " + esc(p.pl) + " · eingereicht " + esc(p.submitted || "–") + " · " + pathPill(c) + "</p><p class=\"meta\">Zur Freigabe: " + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + " · wartet seit " + S.waitDays(p) + " Tag(en)</p>" + evLine(p) + actionsFor(p) + "</div>"; };
-  h += '<h2 class="sec">Wartet auf mich (' + mine.length + ")</h2>" + (mine.length ? mine.map(card).join("") : '<div class="empty">Nichts zu tun. Hier erscheinen Vorhaben, sobald eine Konfiguration eingereicht ist.</div>');
-  if (others.length) h += '<h2 class="sec">Bei anderen (' + others.length + ')</h2><ul class="group">' + others.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + (p.stage === "ppb" ? "wartet auf PGB" : "wartet auf MS Gate Committee") + '</span></span><span class="chev">›</span></a></li>').join("") + "</ul>";
+  h += {PL: '<div class="note">Als Projektleitung reichen Sie Schritte ein und stellen Änderungsanträge. Prüfen und Entscheiden geht in den anderen Rollen (oben rechts).</div>',
+    MS: '<div class="note">Das MS Gate Committee prüft in der Tiefe: Leitfragen, Nachweise, Regulatorik und in Spur A und B den gemeinsamen Stand von Hardware und Software. Es empfiehlt, das PGB entscheidet.</div>',
+    PPB: '<div class="note">Das PGB entscheidet auf Grundlage der Empfehlung und der Leitfragen: Go, Go mit offenen Punkten, Modify, Hold oder Kill. Bei Uneinigkeit geht das Vorhaben an das WP Board. Das PGB gibt auch Änderungen am Regelwerk frei.</div>',
+    WP: '<div class="note">Das WP Board entscheidet bei Uneinigkeit im PGB sowie über Änderungen am Rahmen: wesentliche Änderungen des Liefertermins und Budgetänderungen über ' + WP_LIMIT.toLocaleString("de-DE") + ' €.</div>',
+    PG: '<div class="note">Product Governance pflegt das Regelwerk. Änderungen werden erst nach Freigabe durch das PGB aktiv. <a href="#/mehr/regelwerk">Zum Regelwerk</a></div>'}[role] || "";
+  if (role === "PPB" && D && D.pending) h += '<h2 class="sec">Regelwerk-Änderung</h2><div class="qitem"><h3>Regelwerk v' + (RW.rules().ver + 1) + ' (Entwurf von Product Governance)</h3><p class="meta">Eingereicht ' + esc(fmtD(D.pending.at)) + '</p><ul class="lfl">' + RW.diffDraft().map(t => "<li>" + esc(t) + "</li>").join("") + '</ul><div class="btns"><button class="btn primary" data-act="rwapprove">Freigeben</button><button class="btn" data-act="rwrejdlg">Ablehnen</button><a class="btn" href="#/mehr/regelwerk">Entwurf ansehen</a></div></div>';
+  if (role === "PG" && D && D.rej) h += '<div class="warn"><b>PGB hat den Regelwerk-Entwurf abgelehnt:</b> ' + esc(D.rej) + ' <a href="#/mehr/regelwerk">Überarbeiten</a></div>';
+  if (role === "WP") { const L = S.wpCRs(); h += '<h2 class="sec">Rahmenänderungen (' + L.length + ")</h2>" + (L.length ? L.map(({p, c}) => '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + "</h3></a><p class=\"meta\">" + esc(c.id) + " · " + esc(CRK[c.kat].t) + (c.eur ? " · " + c.eur.toLocaleString("de-DE") + " €" : "") + " · " + esc(fmtD(c.at)) + "</p><p>" + esc(c.text) + '</p><div class="btns"><button class="btn primary" data-act="crdecdlg" data-ok="1" data-id="' + esc(p.id) + '" data-c="' + esc(c.id) + '">Annehmen</button><button class="btn destructive" data-act="crdecdlg" data-ok="0" data-id="' + esc(p.id) + '" data-c="' + esc(c.id) + '">Ablehnen</button></div></div>').join("") : '<div class="empty">Keine Rahmenänderungen offen.</div>'); }
+  const card = p => { const c = S.cp(p); return '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + '</h3></a><p class="meta">' + esc(p.id) + " · " + esc(p.pl) + " · eingereicht " + esc(p.submitted || "–") + " · " + pathPill(c) + "</p><p class=\"meta\">Zur Freigabe: " + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + " · wartet seit " + S.waitDays(p) + " Tag(en)</p>" + evLine(p) + subInfo(p, false) + actionsFor(p) + "</div>"; };
+  if (["MS", "PPB", "WP"].includes(role)) h += '<h2 class="sec">Wartet auf mich (' + mine.length + ")</h2>" + (mine.length ? mine.map(card).join("") : '<div class="empty">Nichts zu tun. Hier erscheinen Vorhaben, sobald ein Schritt eingereicht ist.</div>');
+  if (others.length) h += '<h2 class="sec">Bei anderen (' + others.length + ')</h2><ul class="group">' + others.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(subLbl(p)) + " · " + esc(stageTxt(p)) + '</span></span><span class="chev">›</span></a></li>').join("") + "</ul>";
   if (held.length) h += '<h2 class="sec">Hold (' + held.length + ')</h2><ul class="group">' + held.map(p => '<li class="row"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.note) + "</span></span>" + (role === "PPB" ? '<button class="btn small" data-act="resume" data-id="' + esc(p.id) + '">Aufheben</button>' : "") + "</li>").join("") + "</ul>";
   view.innerHTML = h;
 }
@@ -161,14 +203,18 @@ function vQueue() {
 function vCockpit() {
   setBar(brand, "", roleBtn());
   const P = S.state.P, cnt = k => P.filter(p => p.status === k).length, tot = P.filter(p => p.status !== "li" && p.status !== "ki").length;
-  const cs = P.map(p => ({p, c: compute(p.c)})), pep = cs.filter(x => x.c.ok);
+  const cs = P.map(p => ({p, c: S.cp(p)})), pep = cs.filter(x => x.c.ok);
   if (!P.length) { view.innerHTML = '<h1 class="big">Cockpit</h1><div class="empty">Noch keine Vorhaben erfasst. Das Cockpit füllt sich, sobald unter Neu eine Konfiguration eingereicht wird. Eine Anbindung an den Roadmap Master gibt es noch nicht.</div>'; return; }
   let h = '<h1 class="big">Cockpit</h1><div class="kpis">' +
     '<div class="kpi g"><b>' + tot + '</b><span>Vorhaben mit PEP</span></div><button class="kpi" data-act="goto" data-v="#/freigaben"><b>' + S.queue().length + '</b><span>Freigabe offen</span></button>' +
     '<div class="kpi"><b>' + (cnt("bl") + cnt("off")) + '</b><span>Blockiert oder Off Track</span></div><button class="kpi" data-act="filterlate"><b>' + P.filter(S.overdue).length + '</b><span>Überfällig (Plantermin)</span></button></div>';
   const act = P.filter(p => !["li", "ki"].includes(p.status));
   h += '<h2 class="sec">Fortschritt je Vorhaben</h2>' + (act.length ? '<ul class="group">' + act.map(p => { const pr = S.progress(p); return '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + stBadge(p) + " · " + esc(p.next || "–") + (S.overdue(p) ? " · überfällig" : "") + '</span>' + (pr.total ? '<span class="pb" aria-hidden="true"><i style="width:' + Math.round(pr.done / pr.total * 100) + '%"></i></span>' : "") + '</span><span class="tr num">' + (pr.total ? pr.done + "/" + pr.total : "–") + '</span></a></li>'; }).join("") + "</ul>" : '<div class="empty">Keine Vorhaben mit PEP.</div>');
-  const wq = S.queue(); if (wq.length) h += '<h2 class="sec">Wartet auf Freigabe</h2><ul class="group">' + wq.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(subLbl(p)) + " · " + (p.stage === "ppb" ? "beim PGB" : "beim MS Gate Committee") + '</span></span><span class="tr num">' + S.waitDays(p) + " Tag(e)</span></a></li>").join("") + "</ul>";
+  const wq = S.queue(); if (wq.length) h += '<h2 class="sec">Wartet auf Freigabe</h2><ul class="group">' + wq.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(subLbl(p)) + " · " + stageTxt(p) + '</span></span><span class="tr num">' + S.waitDays(p) + " Tag(e)</span></a></li>").join("") + "</ul>";
+  const gs = S.gateStats(), pct = n => gs.n ? Math.round(n / gs.n * 100) + " %" : "–", dd = v => v === null ? "–" : (Math.round(v * 10) / 10).toLocaleString("de-DE");
+  h += '<h2 class="sec">Wirkung der Gates</h2><div class="kpis"><div class="kpi"><b>' + pct(gs.kill) + '</b><span>Kill-Quote</span></div><div class="kpi"><b>' + pct(gs.hold) + '</b><span>Hold-Quote</span></div><div class="kpi"><b>' + pct(gs.modify) + '</b><span>Modify-Quote</span></div><div class="kpi"><b>' + dd(gs.med) + '</b><span>Tage bis zur Entscheidung (Median)</span></div></div>' +
+    '<table class="sr"><caption>Entscheidungen von PGB und WP Board</caption><thead><tr><th>Ergebnis</th><th>Anzahl</th></tr></thead><tbody>' + [["Go", gs.go], ["Go mit offenen Punkten", gs.goOp], ["Modify", gs.modify], ["Hold", gs.hold], ["Kill", gs.kill]].map(([a, b]) => "<tr><th>" + a + "</th><td>" + b + "</td></tr>").join("") + "</tbody></table>" +
+    '<p class="foot">' + gs.n + " Entscheidungen, davon " + gs.goOp + " Go mit offenen Punkten und " + gs.wp + " im WP Board. Durchschnitt " + dd(gs.avg) + " Tage von der Einreichung bis zur Entscheidung. Gates ohne Kill und Hold können auf Gates ohne Wirkung hindeuten (Cooper 2008).</p>";
   h += '<h2 class="sec">Status je Product Center</h2><div class="card">';
   PCS.forEach(pc => { const L = P.filter(p => p.pc === pc && p.status !== "li"), n = L.length || 1;
     h += '<div class="hb" aria-hidden="true"><span>' + esc(pc.replace("PC ", "")) + '</span><div class="tr">' + ["on", "off", "bl", "pe", "re", "ho"].map(k => { const m = L.filter(p => p.status === k).length; return m ? '<div class="' + STATUS[k][1] + '" style="width:' + m / n * 100 + '%" title="' + esc(STATUS[k][0]) + ": " + m + '"></div>' : ""; }).join("") + "</div><b>" + L.length + "</b></div>"; });
@@ -189,7 +235,7 @@ function vCockpit() {
 function vMore() {
   setBar(brand, "", roleBtn());
   const st = S.state;
-  view.innerHTML = '<h1 class="big">Mehr</h1><ul class="group"><li><a class="row" href="#/mehr/regelwerk"><span class="t">Regelwerk<span class="s">Gates, Liefergegenstände, Schwellen und Bausteine selbst hinterlegen' + (RW.isDefault() ? "" : " · angepasst") + '</span></span><span class="chev">›</span></a></li><li><button class="row" data-act="demoload"><span class="t">Beispielvorhaben laden<span class="s">14 fiktive Vorhaben in allen Status, mit Nachweisen, zum Ausprobieren</span></span><span class="chev">›</span></button></li>' + (S.hasDemo() ? '<li><button class="row" data-act="demodel"><span class="t">Beispielvorhaben entfernen<span class="s">Eigene Vorhaben bleiben erhalten</span></span><span class="chev">›</span></button></li>' : "") + '<li><button class="row" data-act="reset"><span class="t"><b>Alles zurücksetzen</b><span class="s">Vorhaben, Nachweis-Dateien und Entwurf löschen, App startet leer (z. B. für eine Vorführung)</span></span><span class="chev">›</span></button></li></ul><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter, keine Anmeldung.</p></div>' +
+  view.innerHTML = '<h1 class="big">Mehr</h1><ul class="group"><li><a class="row" href="#/mehr/regelwerk"><span class="t">Regelwerk<span class="s">Version ' + RW.rules().ver + (RW.draft() ? (RW.draft().pending ? " · Entwurf beim PGB" : " · Entwurf in Arbeit") : "") + ', Product Governance pflegt, PGB gibt frei</span></span><span class="chev">›</span></a></li><li><button class="row" data-act="demoload"><span class="t">Beispielvorhaben laden<span class="s">14 fiktive Vorhaben in allen Status, mit Nachweisen, zum Ausprobieren</span></span><span class="chev">›</span></button></li>' + (S.hasDemo() ? '<li><button class="row" data-act="demodel"><span class="t">Beispielvorhaben entfernen<span class="s">Eigene Vorhaben bleiben erhalten</span></span><span class="chev">›</span></button></li>' : "") + '<li><button class="row" data-act="reset"><span class="t"><b>Alles zurücksetzen</b><span class="s">Vorhaben, Nachweis-Dateien und Entwurf löschen, App startet leer (z. B. für eine Vorführung)</span></span><span class="chev">›</span></button></li></ul><h2 class="sec">Rolle</h2><div class="card">' + seg("role", Object.entries(ROLES), st.role) + '<p class="foot" style="margin:0">Die Rolle ist ein Umschalter, keine Anmeldung.</p></div>' +
     '<h2 class="sec">Anzeige</h2>' + seg("theme", [["dark", "Dunkel"], ["light", "Hell"], ["auto", "Automatisch"]], st.theme) +
     '<p class="foot" style="margin:-6px 16px 6px">Schriftgröße</p>' + seg("fs", [[1, "A"], [1.15, "A+"], [1.3, "A++"], [1.5, "A+++"]], st.fs) +
     '<ul class="group"><li class="row"><label class="t" for="hc">Kontrast erhöhen<span class="s">Kräftigere Trennlinien und Zusatztexte</span></label><span class="sw"><input id="hc" type="checkbox" data-hc' + (st.hc ? " checked" : "") + '><span></span></span></li></ul>' +
@@ -201,13 +247,23 @@ function vMore() {
 }
 function vRules() {
   setBar(back("#/mehr", "Mehr"), "Regeln", roleBtn());
-  view.innerHTML = '<h1 class="big">Regeln und Quellen</h1><div class="card"><h3>Einstufung</h3><p class="meta">PEP-pflichtig ab mindestens 2 Monaten Dauer, 2 Abteilungen und 0,3 FTE oder 30 000 € Aufwand.</p><h3>Spur</h3><p class="meta">Drei Ja/Nein-Fragen: A (Device with Software), B (Software on Device), C (Software & Data).</p><h3>Generationsstufe</h3><p class="meta">Full ab 60 % Neuentwicklungsanteil, Light bis 20 %, sonst Standard. Bei Hardwareänderung zählt der höhere Anteil von HW und SW.</p><p class="warn">Die Schwellen 20 % und 60 % sowie die Max-Regel sind Annahmen, nicht abgestimmt.</p><h3>Bausteine</h3><p class="meta">Pflichtkern plus Bausteinpool. Vorgeschlagene Bausteine können nur mit Begründung abgewählt werden.</p><h3>Freigabe</h3><p class="meta">MS Gate Committee prüft, PGB entscheidet. Spur an G1, Stufe und Bausteine an G2, Light gemeinsam an G1+2.</p><h3>Quelle</h3><p class="meta" style="margin:0">Studienarbeit T3100, Kap. 5.7 und Tab. 16 (A-Full 8, B-Standard 5, B-Light 3, C-Full 5 Reviews).</p></div>';
+  const T = RW.rules().thr;
+  view.innerHTML = '<h1 class="big">Regeln und Quellen</h1><div class="card"><h3>Einstufung</h3><p class="meta">PEP-pflichtig ab mindestens 2 Monaten Dauer, 2 Abteilungen und 0,3 FTE oder 30 000 € Aufwand.</p>' +
+    '<h3>Spur</h3><p class="meta">Drei Ja/Nein-Fragen: A (Device with Software), B (Software on Device), C (Software & Data). Das PGB bestätigt die Spur an G1. Ändert sich die Spur, beginnt die Freigabe wieder an G1.</p>' +
+    '<h3>Generationsstufe</h3><p class="meta">Full ab ' + T.full + ' % Neuentwicklungsanteil, Light bis ' + T.light + ' %, sonst Standard. Der Anteil kommt aus der Teilsystemliste (angepasst oder neu) oder aus einer Schätzung. Bei Hardwareänderung zählt der höhere Anteil von HW und SW.</p><p class="warn">Schwellen und Max-Regel sind Annahmen, nicht abgestimmt.</p>' +
+    '<h3>Bausteine und Liefergegenstände</h3><p class="meta">Pflichtkern plus Bausteinpool. Vorgeschlagene Bausteine nur mit Begründung abwählbar. Liefergegenstände je Phase und Spur nach Tab. 12; jeder beantwortet eine Leitfrage oder wird später weiterverwendet (Kap. 5.5).</p>' +
+    '<h3>Freigabe</h3><p class="meta">MS Gate Committee prüft (in Spur A und B mit Prüfvermerk Hardware und Software), PGB entscheidet: Go, Modify, Hold oder Kill. Go mit offenen Punkten nur mit Zustimmung von Committee und PGB. Sind regulatorische Anforderungen nicht erfüllt, lautet das Ergebnis Modify. Bei Uneinigkeit im PGB entscheidet das WP Board.</p>' +
+    '<h3>Leitfragen</h3><p class="meta">Drei je Gate, vor dem Gate bekannt (Tab. 15). Die Projektleitung beantwortet sie beim Einreichen, das Committee bewertet sie, das PGB entscheidet darauf.</p>' +
+    '<h3>Änderungen</h3><p class="meta">Anforderungen innerhalb der Spur gehen ins Backlog. Gemeinsame Systemanforderungen, festgelegte Hardware und Gate-Termine werden am nächsten Gate entschieden. Wesentliche Änderungen des Liefertermins und Budgetänderungen über ' + WP_LIMIT.toLocaleString("de-DE") + ' € entscheidet das WP Board.</p>' +
+    '<h3>Regelwerk</h3><p class="meta">Product Governance pflegt, das PGB gibt frei. Beim ersten Go wird das Regelwerk im Vorhaben festgeschrieben; spätere Fassungen ändern laufende Vorhaben nicht.</p>' +
+    '<h3>Quelle</h3><p class="meta" style="margin:0">Studienarbeit T3100, Kap. 4.2.3 und 5; Referenzfälle Tab. 18 (A-Full 8, B-Standard 5, B-Light 3, C-Full 5 Reviews), geprüft durch tests/referenzfaelle.test.mjs.</p></div>';
 }
 function vOpen() {
   setBar(back("#/mehr", "Mehr"), "Offene Fragen", roleBtn());
-  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Welches gilt für die Anzeige?", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Wer entscheidet im PGB, und wie wird der Entscheid dokumentiert?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wie werden Reviews je Pfad für die Ressourcenplanung gezählt?", "Wer entscheidet bei Review-Meilensteinen (Design Freeze, Serienfreigabe, Pilotfreigabe)? Die App nutzt wie bei Gates: MS Gate Committee prüft, PGB entscheidet.", "Welche Nachweise sind je Liefergegenstand Pflicht, und wo liegen die Dateien produktiv? Aktuell nur lokal im Browser.", "Bleiben Gate-Termine in der App oder kommen sie aus der Roadmap?"];
+  const Q = ["Gate-Schema: Der Renew PEP nutzt G0 bis G8, diese App G1 bis G5. Die Zuordnung (G0 und G1 → App-G1 usw.) ist eine Annahme und im Regelwerk änderbar.", "Schwellen 20 % und 60 % für die Generationsstufe bestätigen.", "Max-Regel bei Hardware und Software bestätigen.", "Teilsystemliste: zählen angepasste und neue Teilsysteme gleich viel?", "Reifegrad beim Einreichen: genügt die Skala nicht erreicht / teilweise / erreicht?", "Wo liegen die Daten produktiv (gemeinsamer Speicher, Anmeldung)?", "Wer entscheidet bei Review-Meilensteinen (Design Freeze, Serienfreigabe, Pilotfreigabe)? Die App nutzt wie bei Gates: MS Gate Committee prüft, PGB entscheidet.", "Welche Nachweise sind je Liefergegenstand Pflicht, und wo liegen die Dateien produktiv? Aktuell nur lokal im Browser.", "Darf das Repo mit Sperrvermerk öffentlich bleiben?"];
   view.innerHTML = '<h1 class="big">Offene Fragen</h1><ul class="group">' + Q.map((q, i) => '<li class="row"><span class="t"><span class="s">Frage ' + (i + 1) + "</span>" + esc(q) + "</span></li>").join("") + "</ul>";
 }
+const roleList = () => '<ul class="group">' + Object.entries(ROLES).map(([k, l]) => '<li><button class="row" data-act="role" data-v="' + k + '" aria-pressed="' + (S.state.role === k) + '"><span class="t">' + esc(l) + '<span class="s">' + esc({PL: "reicht ein, stellt Änderungsanträge", MS: "prüft und empfiehlt", PPB: "entscheidet an den Gates, gibt Regelwerk frei", WP: "Uneinigkeit im PGB, Rahmenänderungen", PG: "pflegt das Regelwerk"}[k]) + '</span></span><span class="tr">' + (S.state.role === k ? "✓" : "") + "</span></button></li>").join("") + "</ul>";
 
 /* ---------- Konfigurator (Aufbau wie ein Autokonfigurator) ---------- */
 const CSTEPS = ["Schnellstart", "Einstufung", "Spur", "Generationsstufe", "Bausteine", "Zusammenfassung"];
@@ -230,11 +286,11 @@ function cfgNav(w) {
 const cfgDv = s => s.ok ? String(s.dv) : "–";
 const cfgAt = s => s.ok ? [["Pfad", s.path], ["Gates", String(s.gates)], ["Reviews", String(s.rv)], ["Liefergegenstände", cfgDv(s)]] : [["Pfad", "ohne PEP"]];
 function stufeCards(c, cur) {
-  const T = RW.rules().thr, hint = {Light: "bis " + T.light + " % neu", Standard: "über " + T.light + " bis unter " + T.full + " % neu", Full: "ab " + T.full + " % neu"};
+  const T = C.ctxRules().thr, lst = cur.ok && (cur.r.sh.swList || (cur.r.hc && cur.r.sh.hwList)), hint = {Light: "bis " + T.light + " % neu", Standard: "über " + T.light + " bis unter " + T.full + " % neu", Full: "ab " + T.full + " % neu"};
   return ["Light", "Standard", "Full"].map(st => {
     const s = C.sumOf(C.withStufe(c, st));
     return C.card({sel: cur.ok && cur.r.st === st, badge: hint[st], title: st, sub: st === "Light" ? "kleiner Pfad, G1 und G2 als Startfreigabe G1+2" : st === "Full" ? "voller Pfad, ohne Abgleich mit Referenzprodukt" : "mittlerer Pfad",
-      attrs: [["Gates", String(s.gates)], ["Reviews", String(s.rv)], ["Liefergegenstände", cfgDv(s)]], delta: C.diff(cur, s), act: ' data-act="cfgstufe" data-v="' + st + '"', label: "Wählen", dis: !cur.ok});
+      attrs: [["Gates", String(s.gates)], ["Reviews", String(s.rv)], ["Liefergegenstände", cfgDv(s)]], delta: C.diff(cur, s), act: ' data-act="cfgstufe" data-v="' + st + '"', label: lst ? "aus Teilsystemliste" : "Wählen", dis: !cur.ok || lst});
   }).join("");
 }
 function modCard(m, c, cur, r) {
@@ -248,7 +304,7 @@ function modCard(m, c, cur, r) {
 }
 function vWizard() {
   if (!S.state.draft) { S.state.draft = S.newWiz(); S.save(); ui.cfgPrev = null; ui.delta = null; }
-  const w = S.state.draft, c = w.c, s = C.sumOf(c), r = s.r;
+  const w = S.state.draft; C.useRules(S.rxOf(w)); const c = w.c, s = C.sumOf(c), r = s.r;
   track(s);
   setBar('<button class="navbtn" data-act="wizleave">Verlassen</button>', "Schritt " + (w.step + 1) + " von 6 · " + CSTEPS[w.step], '<button class="navbtn strong" data-act="wizsum">Übersicht</button>');
   let h = '<div class="cfg">' + cfgNav(w) + '<div class="cmain"><div id="cfgBar">' + C.bar(s, ui.delta, ui.fresh, cfgNext(w)) + '</div><div id="cfgStage">' + C.stage(s, ui.fresh ? ui.newKeys : null) + "</div>";
@@ -259,9 +315,13 @@ function vWizard() {
       const ps = C.sumOf(C.withPreset(c, p));
       return C.card({sel: ps.sig === s.sig, badge: "Referenzfall", title: p.n, sub: p.s, attrs: cfgAt(ps), delta: C.diff(s, ps), act: ' data-act="preset" data-i="' + i + '"', label: "Übernehmen"});
     }).join("") + "</div>";
+    const pv = w.pred && S.byId(w.pred);
+    if (pv) h += '<div class="note"><b>Folgegeneration von ' + esc(pv.id) + ' ' + esc(pv.name) + '.</b> Der Vorgänger ist Referenzprodukt, seine Teilsysteme stehen in der Generationsstufe als übernommen.' + (pv.ll ? '<br><b>Lessons Learned:</b> ' + esc(pv.ll) : '') + '</div>';
     h += '<h2 class="sec">Steckbrief</h2><div class="card"><div class="fg"><label class="f" for="w-name">Name des Vorhabens</label><input id="w-name" data-f="name" type="text" value="' + esc(w.name) + '" maxlength="80" autocomplete="off"></div>' +
       '<div class="fg"><label class="f" for="w-pc">Product Center</label><select id="w-pc" data-f="pc">' + PCS.map(x => "<option" + (x === w.pc ? " selected" : "") + ">" + esc(x) + "</option>").join("") + '</select></div>' +
       '<div class="fg"><label class="f" for="w-pl">Projektleitung (Pflicht)</label><input id="w-pl" data-f="pl" type="text" value="' + esc(w.pl) + '" maxlength="60" autocomplete="off"></div>' +
+      '<div class="fg"><label class="f" for="w-sp">Project Sponsor (bestätigt vor jedem Gate die Ressourcen)</label><input id="w-sp" data-f="sp" type="text" value="' + esc(w.sp || "") + '" maxlength="60" autocomplete="off"></div>' +
+      '<div class="fg"><label class="f" for="w-po">Product Owner (optional)</label><input id="w-po" data-f="po" type="text" value="' + esc(w.po || "") + '" maxlength="60" autocomplete="off"></div>' +
       '<div class="fg"><label class="f" for="w-date">Termin nächster Meilenstein (optional)</label><input id="w-date" data-f="date" type="date" value="' + esc(w.date) + '"></div>' +
       '<div class="fg"><label class="f" for="w-ref">Referenzprodukt (optional)</label><input id="w-ref" data-f="ref" type="text" value="' + esc(w.ref) + '" maxlength="80"></div>' +
       '<div class="fg" style="margin:0"><label class="f" for="w-desc">Kurzbeschreibung (optional)</label><textarea id="w-desc" data-f="desc" maxlength="400">' + esc(w.desc) + "</textarea></div></div>";
@@ -273,18 +333,18 @@ function vWizard() {
     const cur = C.spurKey(r);
     h += '<p class="meta">Die Spur legt Takt, Bausteine und den Satz an Liefergegenständen fest. Jede Karte zeigt, was sich am Pfad ändert.</p><div class="cgrid">' + C.SPUREN.map((x, i) => {
       const hs = C.sumOf(C.withSpur(c, x));
-      return C.card({sel: cur === x.k, title: x.t, sub: x.n, attrs: [["Hardware", x.hw], ["Takt", x.takt], ["Liefergegenstände", "PEP " + hs.r.proc], ["Gates", String(hs.gates)], ["Reviews", String(hs.rv)]],
+      return C.card({sel: cur === x.k, title: x.t, sub: x.n, attrs: [["Hardware", x.hw], ["Takt", x.takt], ["Liefergegenstände", hs.dv + " (Spur " + hs.r.sp + ")"], ["Gates", String(hs.gates)], ["Reviews", String(hs.rv)]],
         delta: C.diff(s, hs), act: ' data-act="cfgspur" data-i="' + i + '"', label: "Auswählen", dis: !r.ok});
     }).join("") + "</div>";
     const Q = ["Läuft das Ergebnis auf einem Gerät?", "Wird die Hardware neu entwickelt oder verändert?", "Führt die Hardware das Vorhaben (Software folgt dem Hardwarestand)?"];
     h += '<details class="card cq"><summary>Mit drei Fragen bestimmen (Entscheidungsbaum)</summary>' + Q.map((t, i) => '<div class="qrow' + (i && !c.q[0] ? " off" : i === 2 && !c.q[1] ? " off" : "") + '" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span>' + t + "</span>" + yn("q", i, c.q[i]) + "</div>").join("") + "</details>";
   } else if (w.step === 3) {
     h += '<p class="meta">Die Stufe folgt aus dem Anteil der Neuentwicklung. Eine Karte setzt Beispielwerte, die Anteile darunter genau einstellen.</p><div class="cgrid c3" id="cfgStufe">' + stufeCards(c, s) + "</div>";
-    h += '<div class="card">' + stepper("hw", "Hardware-Neuentwicklung", c.hw, !r.hc) + stepper("sw", "Software-Neuentwicklung", c.sw, false) +
+    h += tsBlock(c, r) + '<div class="card">' + stepper("hw", "Hardware-Neuentwicklung", r.sh.hw, !r.hc || r.sh.hwList) + stepper("sw", "Software-Neuentwicklung", r.sh.sw, r.sh.swList) + (r.sh.hwList || r.sh.swList ? '<p class="foot" style="margin:8px 0 0">Werte aus der Teilsystemliste sind gesperrt. Ohne Liste gilt die Schätzung.</p>' : "") +
       (r.hc ? '<p class="foot" style="margin:8px 0 0">Bei Hardwareänderung zählt der höhere Anteil (Annahme).</p>' : '<p class="foot" style="margin:8px 0 0">Ohne Hardwareänderung zählt nur der Softwareanteil.</p>') + "</div>" +
       '<div class="card"><div class="fg" style="margin:0"><label class="f" for="w-ref2">Referenzprodukt</label><input id="w-ref2" data-f="ref" type="text" value="' + esc(w.ref) + '" maxlength="80"><p class="foot" style="margin:6px 0 0">Bei Standard und Light wird der Abgleich mit dem Referenzprodukt als Baustein gesetzt.</p></div></div>';
   } else if (w.step === 4) {
-    const all = RW.mods(), pool = all.filter(m => r.avail(m)), na = all.filter(m => !r.avail(m));
+    const all = RW.mods(C.ctxRules()), pool = all.filter(m => r.avail(m)), na = all.filter(m => !r.avail(m));
     const grp = (id, t, list, note) => list.length ? '<h2 class="sec" id="' + id + '">' + t + "</h2>" + (note ? '<p class="foot" style="margin:0 16px 8px">' + note + "</p>" : "") + '<div class="cgrid">' + list.map(m => modCard(m, c, s, r)).join("") + "</div>" : "";
     h += '<p class="meta">Der Pflichtkern ist fest. Jede Karte zeigt, was ein Baustein am Pfad ändert. Vorgeschlagene Bausteine lassen sich nur mit Begründung abwählen.</p>' +
       grp("cfg-stufe", "Durch die Stufe gesetzt", pool.filter(m => m.ty === "stufe")) +
@@ -295,7 +355,7 @@ function vWizard() {
     h += '<div class="spur"><div class="L">' + r.sp + '</div><div><b>' + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + esc(w.name || "Ohne Namen") + " · " + esc(w.pc) + "</p></div></div>";
     if (r.ok) { let lp = -1; h += '<h2 class="sec">Ablauf</h2><ol class="tl">'; r.order.forEach(o => { const ph = phaseOf(o); if (ph !== lp) { h += '<li class="ph">' + esc(PH[ph]) + "</li>"; lp = ph; } h += '<li class="' + (o.rv ? "rv" : "") + '">' + esc(o.n) + (o.t ? " " + esc(o.t) : "") + "</li>"; }); h += "</ol>";
       h += '<h2 class="sec">Bausteine</h2><ul class="group">' + r.on.map(m => row(m.t, m.ty === "stufe" ? "Stufe" : m.ty === "spur" ? "Spur" : "Optional")).join("") + r.ab.map(m => '<li class="row"><span class="t">' + esc(m.t) + ' <span class="lock">abgewählt</span><span class="s">' + esc(c.why[m.id] || "Begründung fehlt") + "</span></span></li>").join("") + "</ul>";
-      h += '<h2 class="sec">Liefergegenstände (' + esc(r.proc) + ')</h2><div class="group" style="padding-right:0">' + delivs(r).map(x => x.gone ? "" : '<details class="dv"><summary>' + esc(x.t) + " · " + x.items.length + '</summary><ul>' + (x.items.length ? x.items.map(i => "<li>" + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt. Im Regelwerk ergänzen.</li>") + "</ul></details>").join("") + "</div>"; }
+      h += '<h2 class="sec">Liefergegenstände (Spur ' + esc(r.sp) + ', Regelwerk v' + r.ver + ')</h2>' + dvList(r); }
     h += '<p class="foot">' + (S.state.role === "PL" ? "Nach dem Einreichen prüft das MS Gate Committee, das PGB entscheidet." : "Einreichen ist nur in der Rolle Projektleitung möglich.") + "</p>";
   }
   h += '<div class="actionbar">' + (w.step ? '<button class="btn back" data-act="wizprev">Zurück</button>' : "") + (w.step < 5 ? '<button class="btn primary" data-act="wiznext">Weiter</button>' : '<button class="btn primary" data-act="wizsubmit"' + (S.state.role === "PL" ? "" : " disabled") + ">Einreichen</button>") + "</div></div></div>";
@@ -306,10 +366,18 @@ function cfgLive() {
   const d = S.state.draft; if (!d) return; const s = C.sumOf(d.c); track(s);
   const b = $("#cfgBar"), st = $("#cfgStage"), k = $("#cfgStufe");
   if (b) b.innerHTML = C.bar(s, ui.delta, ui.fresh, cfgNext(d)); if (st) st.innerHTML = C.stage(s, ui.fresh ? ui.newKeys : null); if (k) k.innerHTML = stufeCards(d.c, s);
-  const hw = $("#in-hw"), r = s.r; if (hw) { hw.disabled = !r.hc; hw.parentElement.querySelectorAll("button").forEach(x => x.disabled = !r.hc); }
+  const hw = $("#in-hw"), r = s.r; if (hw) { const x0 = !r.hc || r.sh.hwList; hw.disabled = x0; hw.parentElement.querySelectorAll("button").forEach(x => x.disabled = x0); }
+}
+// Teilsystemliste (PGE nach Albers): übernommen = Übernahmevariation, angepasst = Gestaltvariation, neu = Prinzipvariation
+function tsBlock(c, r) {
+  const L = c.ts || [], cnt = d => L.filter(t => t.d === d).length;
+  return '<h2 class="sec">Teilsysteme</h2><div class="card"><p class="meta" style="margin-top:0">Abgleich mit dem Referenzprodukt je Teilsystem. Der Neuentwicklungsanteil einer Domäne ist der Anteil angepasster und neuer Teilsysteme (Gestalt- und Prinzipvariation). In Standard und Light gelten die Liefergegenstände der Spur nur für geänderte Teilsysteme.</p>' +
+    L.map((t, i) => '<div class="tsrow"><label class="f sr" for="ts-n-' + i + '">Teilsystem</label><input id="ts-n-' + i + '" type="text" maxlength="60" placeholder="Teilsystem" data-ts="n" data-i="' + i + '" value="' + esc(t.n) + '"><label class="f sr" for="ts-d-' + i + '">Domäne</label><select id="ts-d-' + i + '" data-ts="d" data-i="' + i + '">' + ["HW", "SW"].map(x => "<option" + (t.d === x ? " selected" : "") + ">" + x + "</option>").join("") + '</select><label class="f sr" for="ts-s-' + i + '">Status</label><select id="ts-s-' + i + '" data-ts="s" data-i="' + i + '">' + Object.entries(TSS).map(([k, l]) => '<option value="' + k + '"' + (t.s === k ? " selected" : "") + ">" + l + "</option>").join("") + '</select><button type="button" class="inline-btn" data-act="tsdel" data-i="' + i + '" aria-label="Teilsystem entfernen">Entfernen</button></div>').join("") +
+    '<div class="btns"><button type="button" class="btn small" data-act="tsadd" data-v="HW"' + (r.hc ? "" : " disabled") + '>Teilsystem Hardware</button><button type="button" class="btn small" data-act="tsadd" data-v="SW">Teilsystem Software</button></div>' +
+    (L.length ? '<p class="foot" style="margin:8px 0 0">' + (cnt("HW") ? "Hardware " + r.sh.hw + " % aus " + cnt("HW") + " Teilsystemen. " : "") + (cnt("SW") ? "Software " + r.sh.sw + " % aus " + cnt("SW") + " Teilsystemen. " : "") + "Angepasst und neu zählen gleich (Annahme).</p>" : "") + "</div>";
 }
 const stepper = (k, l, v, dis) => '<div class="step"><div class="lab">' + l + '</div><div class="ctl"><button type="button" data-hold="' + k + '" data-d="-5" aria-label="' + l + ' verringern"' + (dis ? " disabled" : "") + '>−</button><input type="text" inputmode="numeric" id="in-' + k + '" data-stepin="' + k + '" value="' + v + '" aria-label="' + l + ' in Prozent"' + (dis ? " disabled" : "") + '><b>%</b><button type="button" data-hold="' + k + '" data-d="5" aria-label="' + l + ' erhöhen"' + (dis ? " disabled" : "") + ">+</button></div></div>";
-const lvl = r => ["Full", "Standard", "Light"].map(s => '<div class="' + (r.st === s ? "on" : "") + '"><b>' + s + "</b>" + (s === "Full" ? "ab " + RW.rules().thr.full + " %" : s === "Light" ? "bis " + RW.rules().thr.light + " %" : "dazwischen") + "</div>").join("");
+const lvl = r => ["Full", "Standard", "Light"].map(s => '<div class="' + (r.st === s ? "on" : "") + '"><b>' + s + "</b>" + (s === "Full" ? "ab " + C.ctxRules().thr.full + " %" : s === "Light" ? "bis " + C.ctxRules().thr.light + " %" : "dazwischen") + "</div>").join("");
 function wizGo(n) { const w = S.state.draft; w.step = n; ui.wizErr = ""; ui.delta = null; S.save(); vWizard(); view.scrollTop = 0; }
 
 
@@ -318,29 +386,70 @@ ui.rwGate = "G2"; ui.rwPrev = "0";
 const chip = (on, act, attrs, l) => '<button type="button" class="chipb" data-act="' + act + '" ' + attrs + ' aria-pressed="' + on + '">' + esc(l) + "</button>";
 function vRegel() {
   setBar(back("#/mehr", "Mehr"), "Regelwerk", roleBtn());
-  const R = RW.rules(), g = ui.rwGate, its = R.items.filter(i => i.gate === g), STU = ["Full", "Standard", "Light"], SPS = [["A", "Spur A"], ["Bh", "Spur B mit Hardware"], ["B", "Spur B ohne Hardware"], ["C", "Spur C"]];
-  let h = '<h1 class="big">Regelwerk</h1><div class="note">Hier legst du fest, welche Liefergegenstände je Gate gelten. Änderungen wirken sofort auf alle Vorhaben und gelten nur in diesem Browser.</div>' + (R.items.some(i => i.src === "Renew PEP") ? "" : '<div class="warn">Es sind nur die Kernpunkte der Studienarbeit hinterlegt. Unter Werkzeuge die Product-Governance-CSV importieren oder Liefergegenstände selbst anlegen.</div>');
-  h += '<h2 class="sec">Schwellen Generationsstufe</h2><div class="card"><div class="fg"><label class="f" for="rw-l">Light bis (% Neuentwicklung)</label><input id="rw-l" type="number" min="0" max="99" inputmode="numeric" data-rw="thr" data-k="light" value="' + R.thr.light + '"></div><div class="fg" style="margin:0"><label class="f" for="rw-f">Full ab (% Neuentwicklung)</label><input id="rw-f" type="number" min="1" max="100" inputmode="numeric" data-rw="thr" data-k="full" value="' + R.thr.full + '"></div><p class="foot" style="margin:8px 0 0">Annahme aus der Studienarbeit: 20 % und 60 %.</p></div>';
-  h += '<h2 class="sec">Prozess je Spur</h2><div class="card">' + SPS.map(([k, l]) => '<div class="fg"><label class="f" for="rw-p' + k + '">' + l + '</label><select id="rw-p' + k + '" data-rw="proc" data-k="' + k + '">' + ["Device", "Digital"].map(p => '<option' + (R.proc[k] === p ? " selected" : "") + ">" + p + "</option>").join("") + "</select></div>").join("") + '<p class="foot" style="margin:0">Bestimmt, ob die Device- oder die Digital-Liefergegenstände gelten.</p></div>';
-  h += '<h2 class="sec">Gates der App und ihre Quelle</h2><div class="card"><p class="meta">Welche Gates des Renew PEP (G1 bis G8) fließen in welches App-Gate ein?</p>' + ["G1", "G2", "G3", "G4", "G5"].map(k => '<div class="dvrow"><div class="dvh"><b>App-Gate ' + k + '</b></div><div class="chips">' + RW.GATE_IDS.map(x => chip(R.gateMap[k].includes(x), "rwmap", 'data-g="' + k + '" data-v="' + x + '"', x)).join("") + "</div></div>").join("") + "</div>";
-  h += '<h2 class="sec">Liefergegenstände je Renew-Gate</h2>' + seg("rwgate", RW.GATE_IDS.map(x => [x, x]), g);
-  h += '<div class="card"><div class="fg"><label class="f" for="rw-gn">Name von ' + g + '</label><input id="rw-gn" type="text" maxlength="60" data-rw="gname" data-g="' + g + '" value="' + esc(R.gates[g]) + '"></div><p class="meta">' + its.length + " Liefergegenstände in " + g + "</p>" +
-    its.map(i => '<div class="dvrow"><label class="f sr" for="in-' + i.id + '">Name</label><input id="in-' + i.id + '" type="text" maxlength="120" data-rw="iname" data-id="' + i.id + '" value="' + esc(i.name) + '"><div class="chips">' +
-      ["Device", "Digital"].map(p => chip(i.proc.includes(p), "rwchip", 'data-id="' + i.id + '" data-k="proc" data-v="' + p + '"', p)).join("") + STU.map(s => chip(i.stufen.includes(s), "rwchip", 'data-id="' + i.id + '" data-k="stufen" data-v="' + s + '"', s)).join("") + chip(i.kat === "A", "rwkat", 'data-id="' + i.id + '"', "Validieren statt neu") +
-      '</div><p class="meta">' + esc(i.src || "") + (i.quellen ? " · " + i.quellen.length + " Quellzeilen" : "") + '</p>' + (i.quellen ? '<details class="dv"><summary>Quellzeilen anzeigen</summary><ul>' + i.quellen.map(q => "<li>" + esc(q.ms) + ": " + esc(q.name) + " <small>" + esc(q.id) + "</small></li>").join("") + "</ul></details>" : "") +
-      '<button class="inline-btn" data-act="rwdel" data-id="' + i.id + '" aria-label="' + esc(i.name) + ' löschen">Löschen</button></div>').join("") +
-    '<button class="btn" data-act="rwadd" data-g="' + g + '">Liefergegenstand hinzufügen</button></div>';
-  h += '<h2 class="sec">Bausteine</h2><div class="card">' + RW.mods().map(m => '<div class="dvrow"><div class="fg"><label class="f" for="rm-t-' + m.id + '">Baustein, ' + esc(PH[m.ph]) + '</label><input id="rm-t-' + m.id + '" type="text" maxlength="80" data-rw="mod" data-k="t" data-id="' + m.id + '" value="' + esc(m.t) + '"></div><div class="fg" style="margin:0"><label class="f" for="rm-d-' + m.id + '">Liefergegenstand</label><input id="rm-d-' + m.id + '" type="text" maxlength="120" data-rw="mod" data-k="d" data-id="' + m.id + '" value="' + esc(m.d) + '"></div></div>').join("") + "</div>";
-  const pr = PRESETS[+ui.rwPrev], pw = S.wizFromPreset(+ui.rwPrev), pc = compute(pw.c), dv = delivs(pc);
-  h += '<h2 class="sec">Vorschau je Referenzfall</h2>' + seg("rwprev", PRESETS.map((p, i) => [i, p.n]), ui.rwPrev) + '<div class="card"><p class="meta">' + esc(pc.path) + " · Prozess " + esc(pc.proc) + " · " + pc.n + " Reviews</p>" + dv.map(x => x.gone ? "" : '<details class="dv"><summary>' + esc(x.t) + " · " + x.items.length + "</summary><ul>" + (x.items.length ? x.items.map(i => "<li>" + esc(i.t) + (i.bs ? " (Baustein)" : i.kat === "A" ? " (validieren)" : "") + "</li>").join("") : "<li>Keine hinterlegt</li>") + "</ul></details>").join("") + "</div>";
-  h += '<h2 class="sec">Werkzeuge</h2><ul class="group"><li><button class="row" data-act="rwpick" data-i="rwcsv"><span class="t">Quell-CSV importieren<span class="s">Product-Governance-Tabelle, wird nur im Browser gelesen und ergänzt Quellzeilen</span></span><span class="chev">›</span></button></li>' +
-    '<li><button class="row" data-act="rwexp"><span class="t">Regelwerk exportieren (JSON)</span><span class="chev">›</span></button></li><li><button class="row" data-act="rwpick" data-i="rwjson"><span class="t">Regelwerk importieren (JSON)</span><span class="chev">›</span></button></li>' +
-    '<li><button class="row" data-act="rwreset"><span class="t"><b>Regelwerk auf Standard zurücksetzen</b></span><span class="chev">›</span></button></li></ul><input hidden type="file" id="rwcsv" accept=".csv,text/csv"><input hidden type="file" id="rwjson" accept="application/json,.json">';
+  const A = RW.rules(), D = RW.draft(), W = RW.work(), g = ui.rwGate, its = W.items.filter(i => i.gate === g), STU = ["Full", "Standard", "Light"], role = S.state.role;
+  const can = role === "PG" && !(D && D.pending), dis = can ? "" : " disabled", gi = +g.slice(1) - 1;
+  let h = '<h1 class="big">Regelwerk</h1>';
+  // Status und Governance: Product Governance pflegt, PGB gibt frei
+  h += '<div class="card"><p class="meta" style="margin-top:0">Aktiv: <b>Version ' + A.ver + "</b>" + (A.at ? " seit " + esc(fmtD(A.at)) + ", freigegeben von " + esc(A.by) : " (Standard aus der Studienarbeit)") + ".</p>";
+  if (D) h += '<p class="meta">' + (D.pending ? "<b>Entwurf liegt beim PGB</b> seit " + esc(fmtD(D.pending.at)) + "." : D.rej ? "<b>Entwurf vom PGB abgelehnt:</b> " + esc(D.rej) : "<b>Entwurf in Arbeit</b> (noch nicht aktiv).") + '</p><ul class="lfl">' + RW.diffDraft().map(t => "<li>" + esc(t) + "</li>").join("") + "</ul>";
+  if (role === "PG") h += D ? (D.pending ? "" : '<div class="btns"><button class="btn primary" data-act="rwsubmit">Zur Freigabe an das PGB</button><button class="btn" data-act="rwdiscard">Entwurf verwerfen</button></div>') : '<p class="foot" style="margin:0">Jede Änderung landet zuerst in einem Entwurf. Aktiv wird er erst nach Freigabe durch das PGB.</p>';
+  else if (role === "PPB" && D && D.pending) h += '<div class="btns"><button class="btn primary" data-act="rwapprove">Freigeben als Version ' + (A.ver + 1) + '</button><button class="btn" data-act="rwrejdlg">Ablehnen</button></div>';
+  else h += '<p class="foot" style="margin:0">Nur ansehen: Product Governance pflegt das Regelwerk, das PGB gibt Änderungen frei. Rolle oben rechts wechseln.</p>';
+  const old = S.state.P.filter(p => p.rx && p.rx.ver !== A.ver).length;
+  h += '<p class="foot" style="margin:8px 0 0">Laufende Vorhaben behalten das Regelwerk ihres ersten Go' + (old ? " (" + old + " Vorhaben auf älteren Versionen)" : "") + ". Neue Fassungen gelten für neue Vorhaben und Vorhaben ohne Go.</p></div>";
+  h += '<h2 class="sec">Schwellen Generationsstufe</h2><div class="card"><div class="fg"><label class="f" for="rw-l">Light bis (% Neuentwicklung)</label><input id="rw-l" type="number" min="0" max="99" inputmode="numeric" data-rw="thr" data-k="light" value="' + W.thr.light + '"' + dis + '></div><div class="fg" style="margin:0"><label class="f" for="rw-f">Full ab (% Neuentwicklung)</label><input id="rw-f" type="number" min="1" max="100" inputmode="numeric" data-rw="thr" data-k="full" value="' + W.thr.full + '"' + dis + '></div><p class="foot" style="margin:8px 0 0">Annahme aus der Studienarbeit: 20 % und 60 %.</p></div>';
+  const miss = W.items.filter(RW.purposeMissing).length;
+  h += '<h2 class="sec">Liefergegenstände je Gate und Spur</h2><p class="foot" style="margin:0 16px 8px">Standard nach Tab. 12. Kern = alle drei Spuren. Regel aus Kap. 5.5: Jeder Liefergegenstand beantwortet eine Leitfrage oder wird in einer späteren Phase weiterverwendet' + (miss ? ". <b>" + miss + " ohne Zuordnung.</b>" : ".") + "</p>" + seg("rwgate", RW.APP_GATES.map(x => [x, x]), g);
+  const lfOpts = i => '<option value="">keine Leitfrage</option>' + (LF[g] || []).map((q, n) => '<option value="' + g + ":" + n + '"' + (i.lf === g + ":" + n ? " selected" : "") + ">" + esc(q) + "</option>").join("");
+  const wvOpts = i => '<option value="">keine Folgephase</option>' + PH.map((t, n) => n > gi ? '<option value="' + n + '"' + (i.wv === n ? " selected" : "") + ">" + esc(t) + "</option>" : "").join("");
+  h += '<div class="card"><p class="meta">' + its.length + " Liefergegenstände an " + g + " (" + esc(PH[gi]) + ")</p>" +
+    its.map(i => '<div class="dvrow"><label class="f sr" for="in-' + i.id + '">Name</label><input id="in-' + i.id + '" type="text" maxlength="120" data-rw="iname" data-id="' + i.id + '" value="' + esc(i.name) + '"' + dis + '><div class="chips">' +
+      ["A", "B", "C"].map(sp => chip(i.spuren.includes(sp), "rwchip", 'data-id="' + i.id + '" data-k="spuren" data-v="' + sp + '"' + dis, "Spur " + sp)).join("") + STU.map(s => chip(i.stufen.includes(s), "rwchip", 'data-id="' + i.id + '" data-k="stufen" data-v="' + s + '"' + dis, s)).join("") + chip(i.kat === "A", "rwkat", 'data-id="' + i.id + '"' + dis, "Validieren statt neu") + "</div>" +
+      '<div class="two"><div><label class="f" for="lf-' + i.id + '">Beantwortet Leitfrage</label><select id="lf-' + i.id + '" data-rw="lf" data-id="' + i.id + '"' + dis + ">" + lfOpts(i) + '</select></div><div><label class="f" for="wv-' + i.id + '">Weiterverwendet in Phase</label><select id="wv-' + i.id + '" data-rw="wv" data-id="' + i.id + '"' + dis + ">" + wvOpts(i) + "</select></div></div>" +
+      '<p class="meta">' + (RW.purposeMissing(i) ? '<span class="lock">Zuordnung fehlt</span> ' : i.zv ? '<span class="lock">Zuordnung ist ein Vorschlag</span> ' : "") + esc(i.src || "") + (i.rg ? " · Renew " + esc(i.rg) : "") + (i.quellen ? " · " + i.quellen.length + " Quellzeilen" : "") + "</p>" + (i.quellen ? '<details class="dv"><summary>Quellzeilen anzeigen</summary><ul>' + i.quellen.map(q => "<li>" + esc(q.ms) + ": " + esc(q.name) + " <small>" + esc(q.id) + "</small></li>").join("") + "</ul></details>" : "") +
+      (can ? '<button class="inline-btn" data-act="rwdel" data-id="' + i.id + '" aria-label="' + esc(i.name) + ' löschen">Löschen</button>' : "") + "</div>").join("") +
+    (can ? '<button class="btn" data-act="rwadd" data-g="' + g + '">Liefergegenstand hinzufügen</button>' : "") + "</div>";
+  h += '<h2 class="sec">Zuordnung der Renew-Gates</h2><div class="card"><p class="meta">Welche Gates des Renew PEP (G0 bis G8) fließen beim CSV-Import in welches App-Gate? Die Standardzuordnung ist eine Annahme.</p>' + RW.APP_GATES.map(k => '<div class="dvrow"><div class="dvh"><b>App-Gate ' + k + '</b></div><div class="chips">' + RW.GATE_IDS.map(x => chip(W.gateMap[k].includes(x), "rwmap", 'data-g="' + k + '" data-v="' + x + '" title="' + esc(W.gates[x]) + '"' + dis, x)).join("") + "</div></div>").join("") + "</div>";
+  h += '<h2 class="sec">Import: Quellprozess → Spuren</h2><div class="card">' + ["Device", "Digital"].map(pr => '<div class="dvrow"><div class="dvh"><b>' + pr + '</b></div><div class="chips">' + ["A", "B", "C"].map(sp => chip(W.imp[pr].includes(sp), "rwimp", 'data-p="' + pr + '" data-v="' + sp + '"' + dis, "Spur " + sp)).join("") + "</div></div>").join("") + '<p class="foot" style="margin:0">Nur für den CSV-Import. In der App gelten Liefergegenstände je Spur, nicht je Prozess.</p></div>';
+  h += '<h2 class="sec">Bausteine</h2><div class="card">' + RW.mods(W).map(m => '<div class="dvrow"><div class="fg"><label class="f" for="rm-t-' + m.id + '">Baustein, ' + esc(PH[m.ph]) + '</label><input id="rm-t-' + m.id + '" type="text" maxlength="80" data-rw="mod" data-k="t" data-id="' + m.id + '" value="' + esc(m.t) + '"' + dis + '></div><div class="fg" style="margin:0"><label class="f" for="rm-d-' + m.id + '">Liefergegenstand</label><input id="rm-d-' + m.id + '" type="text" maxlength="120" data-rw="mod" data-k="d" data-id="' + m.id + '" value="' + esc(m.d) + '"' + dis + "></div></div>").join("") + "</div>";
+  const pw = S.wizFromPreset(+ui.rwPrev), pc = compute(pw.c, W);
+  h += '<h2 class="sec">Vorschau je Referenzfall' + (D ? " (Entwurf)" : "") + "</h2>" + seg("rwprev", PRESETS.map((p, i) => [i, p.n]), ui.rwPrev) + '<div class="card"><p class="meta">' + esc(pc.path) + " · " + pc.n + " Reviews</p>" + dvList(pc) + "</div>";
+  h += '<h2 class="sec">Werkzeuge</h2><ul class="group">' + (can ? '<li><button class="row" data-act="rwpick" data-i="rwcsv"><span class="t">Quell-CSV importieren<span class="s">Product-Governance-Tabelle (G0 bis G8), wird nur im Browser gelesen und landet im Entwurf</span></span><span class="chev">›</span></button></li><li><button class="row" data-act="rwpick" data-i="rwjson"><span class="t">Regelwerk importieren (JSON)<span class="s">Landet im Entwurf</span></span><span class="chev">›</span></button></li>' : "") +
+    '<li><button class="row" data-act="rwexp"><span class="t">Regelwerk exportieren (JSON)' + (D ? '<span class="s">Exportiert den Entwurf</span>' : "") + '</span><span class="chev">›</span></button></li>' + (can ? '<li><button class="row" data-act="rwreset"><span class="t"><b>Entwurf auf Standard setzen</b><span class="s">Tab. 12 und Schwellen 20/60 %, Freigabe durch das PGB nötig</span></span><span class="chev">›</span></button></li>' : "") + '</ul><input hidden type="file" id="rwcsv" accept=".csv,text/csv"><input hidden type="file" id="rwjson" accept="application/json,.json">';
+  if ((A.hist || []).length) h += '<h2 class="sec">Versionen</h2><ul class="group">' + A.hist.slice().reverse().map(x => '<li class="row"><span class="t">Version ' + x.ver + '<span class="s">' + esc(x.diff.join(" · ")) + '</span></span><span class="tr">' + esc(fmtD(x.at)) + "</span></li>").join("") + "</ul>";
   view.innerHTML = h;
 }
 const rwRender = () => { const y = view.scrollTop; vRegel(); view.scrollTop = y; };
 
 /* ---------- Ereignisse ---------- */
+// Aktion mit Rückgängig; Fehler bleiben im Fenster stehen
+function act(fn, errId) { const snap = S.snapshot(), res = fn(); if (!res) return; if (res.error) { const x = errId && document.getElementById(errId); if (x) { x.textContent = res.error; x.hidden = false; } else toast(res.error); return; } closeDlg(); toast(res.msg, () => { S.restore(snap); render(); }); render(); }
+function rwEdit(fn) { if (S.state.role !== "PG") { toast("Nur Product Governance pflegt das Regelwerk"); return false; } if (!RW.edit(fn)) { toast("Der Entwurf liegt beim PGB und ist gesperrt"); return false; } return true; }
+const radio = (name, opts, cur) => '<div class="rad" role="radiogroup">' + opts.map(([v, l]) => '<label><input type="radio" name="' + name + '" value="' + v + '"' + (cur === v ? " checked" : "") + "> " + esc(l) + "</label>").join("") + "</div>";
+const radVal = name => { const x = document.querySelector('input[name="' + name + '"]:checked'); return x ? x.value : ""; };
+function subDlg(p) {
+  const o = S.curStep(p), m = S.missingDelivs(p, o), nd = S.needs(p, o), prev = S.stepOf(p, o.n).ans || {};
+  let h = '<h2 id="dlg-h">Zur Freigabe einreichen</h2><p class="meta">' + esc(S.stepLabel(o)) + " · " + esc(p.name) + "</p>" + (m.length ? '<div class="warn"><b>Ohne Datei:</b> ' + esc(m.join(", ")) + ". Das MS Gate Committee sieht diese Lücke.</div>" : '<div class="note">Alle Liefergegenstände haben mindestens eine Datei.</div>');
+  if (nd.lf.length) h += '<h3>Leitfragen (Freigabekriterien, vorab bekannt)</h3>' + nd.lf.map((q, i) => '<label class="f" for="lf' + i + '">' + esc(q.q) + '</label><textarea id="lf' + i + '" data-lfk="' + q.k + '" maxlength="400" rows="2">' + esc(prev.lf ? prev.lf[q.k] || "" : "") + "</textarea>").join("");
+  if (nd.rg) h += '<h3>Reifegrad gegenüber dem Ziel der Phase</h3>' + [["hw", "Hardware"], ["sw", "Software"], ["sys", "System (gemeinsam)"]].map(([k, l]) => '<p class="meta" style="margin:6px 0 0">' + l + "</p>" + radio("rg-" + k, RG.map(x => [x, x]), prev.rg ? prev.rg[k] : "")).join("");
+  if (nd.kpis) h += '<label class="f" for="skpi">Kennzahlen (Spur C: an G2 festgelegt, nach jeder Iteration gemessen)</label><textarea id="skpi" maxlength="400" rows="2">' + esc(p.kpis || "") + "</textarea>";
+  if (nd.ll) h += '<label class="f" for="sll">Lessons Learned (gehen an die nächste Generation)</label><textarea id="sll" maxlength="600" rows="3">' + esc(p.ll || "") + "</textarea>";
+  if (nd.crs.length) h += '<div class="note"><b>Änderungsanträge zur Entscheidung an diesem Gate:</b><ul>' + nd.crs.map(c => "<li>" + esc(c.id) + ": " + esc(c.text) + "</li>").join("") + "</ul></div>";
+  if (nd.sponsor) h += (p.sponsor ? "" : '<label class="f" for="ssp">Project Sponsor</label><input id="ssp" type="text" maxlength="60">') + '<label class="row" style="padding-left:0"><span class="t">' + (p.sponsor ? esc(p.sponsor) : "Der Sponsor") + ' hat die Ressourcen für die nächste Phase bestätigt</span><span class="sw"><input id="sspok" type="checkbox"><span></span></span></label>';
+  return h + '<label class="f" for="snote">Kommentar an das MS Gate Committee (optional)</label><textarea id="snote" maxlength="400"></textarea><p class="err" id="serr" hidden></p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="stepsubok" data-id="' + esc(p.id) + '">Einreichen</button></div>';
+}
+function msDlg(p) {
+  const o = S.subStep(p), x = S.stepOf(p, o.n), nd = S.needs(p, o), r = S.cp(p), a = x.ans || {}, m = S.missingDelivs(p, o);
+  let h = '<h2 id="dlg-h">Prüfung durch das MS Gate Committee</h2><p class="meta">' + esc(S.stepLabel(o)) + " · " + esc(p.name) + "</p>";
+  if (nd.lf.length) h += "<h3>Leitfragen</h3>" + nd.lf.map((q, i) => '<p class="meta" style="margin:8px 0 2px"><b>' + esc(q.q) + "</b><br>" + esc(a.lf ? a.lf[q.k] || "keine Antwort" : "keine Antwort") + "</p>" + radio("mlf" + i, [["ok", "beantwortet"], ["offen", "offen"]], "")).join("");
+  if (a.rg) h += '<p class="meta">Reifegrad laut PL: Hardware ' + esc(a.rg.hw) + ", Software " + esc(a.rg.sw) + ", System " + esc(a.rg.sys) + "</p>";
+  if (r.sp === "A" || r.sp === "B") h += "<h3>Gemeinsamer Stand von Hardware und Software</h3>" + [["mhw", "Prüfvermerk Hardware-Entwicklung"], ["msw", "Prüfvermerk Software-Entwicklung"]].map(([id, l]) => '<label class="row" style="padding-left:0"><span class="t">' + l + '</span><span class="sw"><input id="' + id + '" type="checkbox"><span></span></span></label>').join("");
+  h += "<h3>Regulatorische Anforderungen</h3>" + radio("mreg", [["ja", "erfüllt"], ["nein", "nicht erfüllt (Ergebnis Modify)"], ["nr", "nicht relevant"]], "");
+  if (m.length) h += '<div class="warn"><b>Ohne Nachweis:</b> ' + esc(m.join(", ")) + ". Wird als offener Punkt übernommen.</div>";
+  return h + '<label class="f" for="mopen">Weitere offene Punkte (je Zeile einer)</label><textarea id="mopen" maxlength="600" rows="2"></textarea><p class="foot">Offene Punkte führen zur Empfehlung „Go mit offenen Punkten“, dem das PGB ausdrücklich zustimmen muss.</p><p class="err" id="merr" hidden></p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="msok" data-id="' + esc(p.id) + '">Empfehlung abgeben</button></div>';
+}
+const crRouteTxt = (k, eur) => { const t = S.crRoute(k, eur); return t === "backlog" ? "Geht ins Backlog der Spur, kein Gate nötig." : t === "wp" ? "Entscheidet das WP Board (Änderung am Rahmen)." : t === "gate" ? "Wird am nächsten Gate entschieden." : ""; };
+
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const a = el.dataset.act, id = el.dataset.id, d = S.state.draft;
@@ -348,30 +457,46 @@ document.addEventListener("click", e => {
   switch (a) {
     case "rwgate": ui.rwGate = el.dataset.v; rwRender(); break;
     case "rwprev": ui.rwPrev = el.dataset.v; rwRender(); break;
-    case "rwmap": RW.edit(R => { const l = R.gateMap[el.dataset.g], v = el.dataset.v; R.gateMap[el.dataset.g] = l.includes(v) ? l.filter(x => x !== v) : [...l, v].sort(); }); rwRender(); break;
-    case "rwchip": RW.edit(R => { const i = R.items.find(x => x.id === el.dataset.id); if (!i) return; const l = i[el.dataset.k], v = el.dataset.v; i[el.dataset.k] = l.includes(v) ? l.filter(x => x !== v) : [...l, v]; }); rwRender(); break;
-    case "rwkat": RW.edit(R => { const i = R.items.find(x => x.id === el.dataset.id); if (i) i.kat = i.kat === "A" ? "D" : "A"; }); rwRender(); break;
-    case "rwadd": { const nid = RW.addItem(el.dataset.g); rwRender(); document.getElementById("in-" + nid)?.focus(); document.getElementById("in-" + nid)?.select(); break; }
-    case "rwdel": { const snap = JSON.stringify(RW.rules()); RW.edit(R => { R.items = R.items.filter(x => x.id !== el.dataset.id); }); rwRender(); toast("Liefergegenstand gelöscht", () => { RW.importRules(snap); rwRender(); }); break; }
+    case "rwmap": rwEdit(R => { const l = R.gateMap[el.dataset.g], v = el.dataset.v; R.gateMap[el.dataset.g] = l.includes(v) ? l.filter(x => x !== v) : [...l, v].sort(); }); rwRender(); break;
+    case "rwchip": rwEdit(R => { const i = R.items.find(x => x.id === el.dataset.id); if (!i) return; const l = i[el.dataset.k], v = el.dataset.v; i[el.dataset.k] = l.includes(v) ? l.filter(x => x !== v) : [...l, v]; }); rwRender(); break;
+    case "rwkat": rwEdit(R => { const i = R.items.find(x => x.id === el.dataset.id); if (i) i.kat = i.kat === "A" ? "D" : "A"; }); rwRender(); break;
+    case "rwadd": { if (S.state.role !== "PG") break; const nid = RW.addItem(el.dataset.g); if (!nid) break; rwRender(); document.getElementById("in-" + nid)?.focus(); document.getElementById("in-" + nid)?.select(); break; }
+    case "rwdel": { const W = RW.work(), ix = W.items.findIndex(x => x.id === el.dataset.id), it = ix >= 0 ? JSON.parse(JSON.stringify(W.items[ix])) : null; if (!it || !rwEdit(R => { R.items = R.items.filter(x => x.id !== it.id); })) break; rwRender(); toast("Liefergegenstand gelöscht", () => { RW.edit(R => { R.items.splice(ix, 0, it); }); rwRender(); }); break; }
     case "rwpick": document.getElementById(el.dataset.i)?.click(); break;
     case "rwexp": download("PFAD-Regelwerk-" + TODAY + ".json", RW.exportRules(), "application/json"); toast("Regelwerk exportiert"); break;
-    case "rwreset": openDlg('<h2 id="dlg-h">Regelwerk zurücksetzen?</h2><p class="meta">Alle eigenen Änderungen an Schwellen, Gates, Liefergegenständen und Bausteinen gehen verloren. Vorhaben bleiben erhalten.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="rwresetok">Zurücksetzen</button></div>'); break;
-    case "rwresetok": RW.resetRules(); closeDlg(); toast("Regelwerk auf Standard"); rwRender(); break;
+    case "rwreset": openDlg('<h2 id="dlg-h">Entwurf auf Standard setzen?</h2><p class="meta">Der Entwurf enthält danach wieder Tab. 12 und die Schwellen 20/60 %. Aktiv wird er erst nach Freigabe durch das PGB. Vorhaben bleiben unverändert.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="rwresetok">Zurücksetzen</button></div>'); break;
+    case "rwresetok": if (S.state.role === "PG" && RW.draftToStandard()) { closeDlg(); toast("Entwurf auf Standard gesetzt, Freigabe durch das PGB nötig"); rwRender(); } break;
     case "close": closeDlg(); break;
+    case "msdlg": openDlg(msDlg(S.byId(id))); break;
+    case "msok": { const p = S.byId(id), nd = S.needs(p, S.subStep(p)), lf = {}; nd.lf.forEach((q, i) => { const v = radVal("mlf" + i); if (v) lf[q.k] = v; }); act(() => S.recommend(id, {lf, hw: !!$("#mhw")?.checked, sw: !!$("#msw")?.checked, reg: radVal("mreg"), open: $("#mopen").value}), "merr"); break; }
+    case "go": act(() => S.goDecision(id, false)); break;
+    case "godlg": { const p = S.byId(id), o = S.subStep(p), op = S.stepOf(p, o.n).openPts || []; openDlg('<h2 id="dlg-h">Go mit offenen Punkten</h2><p class="meta">' + esc(S.stepLabel(o)) + " · " + esc(p.name) + '</p><ul class="lfl">' + op.map(t => "<li>" + esc(t) + "</li>").join("") + '</ul><label class="row" style="padding-left:0"><span class="t">Das MS Gate Committee hat zugestimmt, das ' + esc(S.whoOf(p)) + ' stimmt einem Go mit diesen offenen Punkten zu</span><span class="sw"><input id="goop" type="checkbox"><span></span></span></label><p class="err" id="gerr" hidden></p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="gook" data-id="' + esc(id) + '">Go entscheiden</button></div>'); break; }
+    case "gook": act(() => S.goDecision(id, !!$("#goop")?.checked), "gerr"); break;
+    case "crdlg": openDlg('<h2 id="dlg-h">Änderungsantrag</h2><p class="meta">' + esc(S.byId(id).name) + '</p><label class="f" for="crk">Was ändert sich?</label><select id="crk" data-crk>' + Object.entries(CRK).map(([k, v]) => '<option value="' + k + '">' + esc(v.t) + "</option>").join("") + '</select><div id="creurw" hidden><label class="f" for="creur">Betrag der Budgetänderung in €</label><input id="creur" type="number" min="0" step="1000" inputmode="numeric" data-crk></div><p class="note" id="crroute">' + esc(crRouteTxt("backlog", 0)) + '</p><label class="f" for="crt">Beschreibung</label><textarea id="crt" maxlength="400"></textarea><p class="err" id="crerr" hidden></p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="crok" data-id="' + esc(id) + '">Antrag stellen</button></div>'); break;
+    case "crok": act(() => S.addCR(id, $("#crk").value, $("#crt").value, $("#creur").value), "crerr"); break;
+    case "crdecdlg": { const ok = el.dataset.ok === "1"; openDlg('<h2 id="dlg-h">' + (ok ? "Änderung annehmen" : "Änderung ablehnen") + '</h2><p class="meta">' + esc(el.dataset.c) + " · " + esc(S.byId(id).name) + '</p><label class="f" for="cdt">' + (ok ? "Kommentar (optional)" : "Begründung (Pflicht)") + '</label><textarea id="cdt" maxlength="400"></textarea><p class="err" id="cderr" hidden></p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="crdecok" data-ok="' + (ok ? 1 : 0) + '" data-id="' + esc(id) + '" data-c="' + esc(el.dataset.c) + '">' + (ok ? "Annehmen" : "Ablehnen") + "</button></div>"); break; }
+    case "crdecok": act(() => S.decideCR(id, el.dataset.c, el.dataset.ok === "1", $("#cdt").value), "cderr"); break;
+    case "succ": S.state.draft = S.wizFromSuccessor(S.byId(id)); ui.wizErr = ""; S.save(); location.hash = "#/neu"; break;
+    case "tsadd": d.c.ts = d.c.ts || []; d.c.ts.push({n: "", d: el.dataset.v, s: "n"}); S.guardSpur(d); S.save(); keepScroll(vWizard); document.getElementById("ts-n-" + (d.c.ts.length - 1))?.focus(); break;
+    case "tsdel": d.c.ts.splice(+el.dataset.i, 1); S.guardSpur(d); S.save(); keepScroll(vWizard); break;
+    case "rwsubmit": if (S.state.role === "PG" && RW.submitDraft()) { toast("Entwurf an das PGB übergeben"); rwRender(); } break;
+    case "rwdiscard": { if (S.state.role !== "PG") break; RW.discardDraft(); toast("Entwurf verworfen, aktiv bleibt Version " + RW.rules().ver); rwRender(); break; }
+    case "rwapprove": { if (S.state.role !== "PPB") break; const n = RW.approveDraft("PGB"); if (n) { toast("Regelwerk Version " + n + " ist aktiv"); render(); } break; }
+    case "rwrejdlg": openDlg('<h2 id="dlg-h">Regelwerk-Entwurf ablehnen</h2><p class="meta">Product Governance sieht die Begründung und überarbeitet den Entwurf.</p><label class="f" for="rwr">Begründung (Pflicht)</label><textarea id="rwr" maxlength="400"></textarea><p class="err" id="rwrerr" hidden>Bitte eine Begründung eingeben.</p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="rwrejok">Ablehnen</button></div>'); break;
+    case "rwrejok": { const t = $("#rwr").value.trim(); if (!t) { $("#rwrerr").hidden = false; break; } if (S.state.role === "PPB" && RW.rejectDraft(t)) { closeDlg(); toast("Entwurf abgelehnt"); render(); } break; }
+    case "rwimp": if (rwEdit(R => { const l = R.imp[el.dataset.p], v = el.dataset.v; R.imp[el.dataset.p] = l.includes(v) ? l.filter(x => x !== v) : [...l, v]; })) rwRender(); break;
     case "filterlate": ui.filter = "late"; location.hash = "#/vorhaben"; break;
     case "pick": document.getElementById("fi-" + el.dataset.i)?.click(); break;
     case "dl": getBlob(el.dataset.f, el.dataset.id, el.dataset.k); break;
     case "fdel": removeFile(el.dataset.id, el.dataset.k, el.dataset.f); break;
-    case "stepsub": { const p = S.byId(id), o = S.curStep(p), m = S.missingDelivs(p, o); openDlg('<h2 id="dlg-h">Zur Freigabe einreichen</h2><p class="meta">' + esc(S.stepLabel(o)) + " · " + esc(p.name) + "</p>" + (m.length ? '<div class="warn"><b>Ohne Datei:</b> ' + esc(m.join(", ")) + ". Das MS Gate Committee sieht diese Lücke.</div>" : '<div class="note">Alle Liefergegenstände haben mindestens eine Datei.</div>') + '<label class="f" for="snote">Kommentar an das MS Gate Committee (optional)</label><textarea id="snote" maxlength="400"></textarea><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="stepsubok" data-id="' + esc(id) + '">Einreichen</button></div>'); break; }
-    case "stepsubok": { const snap = S.snapshot(), res = S.submitStep(id, $("#snote").value); closeDlg(); if (res.error) toast(res.error); else { toast(res.msg, () => { S.restore(snap); render(); }); render(); } break; }
+    case "stepsub": openDlg(subDlg(S.byId(id))); setTimeout(() => $("#lf0")?.focus(), 50); break;
+    case "stepsubok": { const lf = {}; document.querySelectorAll("[data-lfk]").forEach(t => lf[t.dataset.lfk] = t.value); act(() => S.submitStep(id, {lf, rg: {hw: radVal("rg-hw"), sw: radVal("rg-sw"), sys: radVal("rg-sys")}, sponsor: $("#ssp")?.value, sponsorOk: !!$("#sspok")?.checked, kpis: $("#skpi")?.value, ll: $("#sll")?.value, note: $("#snote").value}), "serr"); break; }
     case "help": openDlg(helpHtml()); break;
     case "filter": ui.filter = el.dataset.v; vList(); break;
     case "role": S.setRole(el.dataset.v); render(); break;
-    case "roledlg": openDlg('<h2 id="dlg-h">Rolle wählen</h2><p class="meta">Umschalter, keine Anmeldung.</p>' + seg("role", Object.entries(ROLES), S.state.role) + '<button class="btn" data-act="close">Fertig</button>'); break;
+    case "roledlg": openDlg('<h2 id="dlg-h">Rolle wählen</h2><p class="meta">Umschalter, keine Anmeldung.</p>' + roleList() + '<button class="btn" data-act="close">Fertig</button>'); break;
     case "theme": S.setTheme(el.dataset.v); applyTheme(); vMore(); break;
     case "goto": location.hash = el.dataset.v; break;
-    case "recommend": undoable(() => S.recommend(id)); break;
-    case "go": undoable(() => S.goDecision(id)); break;
     case "resume": undoable(() => S.resume(id)); break;
     case "rdlg": { const c = S.REASONS[el.dataset.k]; openDlg('<h2 id="dlg-h">' + esc(c.t) + '</h2><p class="meta">' + esc(c.hint) + '</p><label class="f" for="rtxt">Begründung (Pflicht)</label><textarea id="rtxt" maxlength="400" placeholder="' + esc(c.txt) + '"></textarea><p class="err" id="rerr" hidden></p><div class="btns"><button class="btn" data-act="close">Abbrechen</button><button class="btn primary" data-main data-act="rok" data-k="' + esc(el.dataset.k) + '" data-id="' + esc(id) + '">' + esc(c.ok) + "</button></div>"); setTimeout(() => $("#rtxt")?.focus(), 50); break; }
     case "rok": { const snap = S.snapshot(), res = S.reason(id, el.dataset.k, $("#rtxt").value); if (res.error) { const x = $("#rerr"); x.textContent = res.error; x.hidden = false; } else { closeDlg(); toast(res.msg, () => { S.restore(snap); render(); }); render(); } break; }
@@ -397,7 +522,7 @@ document.addEventListener("click", e => {
     case "q": d.c.q[+el.dataset.i] = +el.dataset.v; if (!d.c.q[0]) { d.c.q[1] = 1; d.c.q[2] = 1; } S.guardSpur(d); S.save(); keepScroll(vWizard); break;
     case "wiznext": { if (d.step === 0 && (!d.name.trim() || !d.pl.trim())) { ui.wizErr = !d.name.trim() ? "Bitte einen Namen eingeben." : "Bitte die Projektleitung angeben."; vWizard(); break; } wizGo(Math.min(5, d.step + 1)); break; }
     case "wizprev": wizGo(Math.max(0, d.step - 1)); break;
-    case "wizsum": { const r = compute(d.c); openDlg('<h2 id="dlg-h">Übersicht</h2><p class="meta">' + esc(d.name || "Ohne Namen") + " · " + esc(d.pc) + '</p><div class="spur"><div class="L">' + r.sp + "</div><div><b>" + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + r.on.length + " Bausteine aktiv, " + r.ab.length + ' abgewählt</p></div></div><div class="btns"><button class="btn" data-act="close">Weiter bearbeiten</button><button class="btn destructive" data-act="wizdrop">Entwurf verwerfen</button></div>'); break; }
+    case "wizsum": { const r = compute(d.c, S.rxOf(d)); openDlg('<h2 id="dlg-h">Übersicht</h2><p class="meta">' + esc(d.name || "Ohne Namen") + " · " + esc(d.pc) + '</p><div class="spur"><div class="L">' + r.sp + "</div><div><b>" + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + r.on.length + " Bausteine aktiv, " + r.ab.length + ' abgewählt</p></div></div><div class="btns"><button class="btn" data-act="close">Weiter bearbeiten</button><button class="btn destructive" data-act="wizdrop">Entwurf verwerfen</button></div>'); break; }
     case "wizleave": location.hash = d.meta ? "#/vorhaben/" + encodeURIComponent(d.meta) : "#/vorhaben"; break;
     case "wizdrop": { const m = d.meta, snap = S.snapshot(); S.state.draft = null; S.save(); closeDlg(); location.hash = m ? "#/vorhaben/" + encodeURIComponent(m) : "#/vorhaben"; toast("Entwurf verworfen", () => { S.restore(snap); location.hash = "#/neu"; }); break; }
     case "wizsubmit": { const snap = S.snapshot(), res = S.submitWiz(d); if (res.error) { ui.wizErr = res.error; if (res.step !== undefined) d.step = res.step; vWizard(); view.scrollTop = 0; } else { ui.wizErr = ""; toast(res.msg, () => { S.restore(snap); location.hash = "#/neu"; render(); }); location.hash = "#/vorhaben/" + encodeURIComponent(res.id); } break; }
@@ -405,22 +530,25 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target, d = S.state.draft;
-  if (t.dataset.mod && d) { const m = RW.mods().find(x => x.id === t.dataset.mod), r = compute(d.c); if (m.ty === "spur") { d.c.sel = d.c.sel || {}; d.c.sel[m.id] = t.checked; } else d.c.opt[m.id] = t.checked ? 1 : 0; S.save(); keepScroll(vWizard); return; }
+  if (t.dataset.mod && d) { const m = RW.mods(C.ctxRules()).find(x => x.id === t.dataset.mod); if (m.ty === "spur") { d.c.sel = d.c.sel || {}; d.c.sel[m.id] = t.checked; } else d.c.opt[m.id] = t.checked ? 1 : 0; S.save(); keepScroll(vWizard); return; }
   if (t.dataset.rw) {
     const k = t.dataset.k, v = t.value, id = t.dataset.id;
-    RW.edit(R => { switch (t.dataset.rw) {
+    const okE = rwEdit(R => { switch (t.dataset.rw) {
       case "thr": R.thr[k] = +v; break;
-      case "proc": R.proc[k] = v; break;
+      case "lf": { const i = R.items.find(x => x.id === id); if (i) { i.lf = v; i.zv = false; } break; }
+      case "wv": { const i = R.items.find(x => x.id === id); if (i) { i.wv = v === "" ? "" : +v; i.zv = false; } break; }
       case "gname": R.gates[t.dataset.g] = v.trim() || R.gates[t.dataset.g]; break;
       case "iname": { const i = R.items.find(x => x.id === id); if (i && v.trim()) i.name = v.trim(); break; }
       case "mod": R.mods[id] = Object.assign({t: RW.mods().find(m => m.id === id).t, d: RW.mods().find(m => m.id === id).d}, R.mods[id] || {}, {[k]: v.trim() || RW.mods().find(m => m.id === id)[k]}); break;
     } });
-    toast("Regelwerk gespeichert"); if (t.dataset.rw === "thr" || t.dataset.rw === "proc") rwRender(); return;
+    if (okE) toast("Im Entwurf gespeichert, aktiv nach Freigabe durch das PGB"); rwRender(); return;
   }
-  if (t.id === "rwcsv" && t.files[0]) { t.files[0].arrayBuffer().then(b => { try { const n = RW.importCsv(b); toast(n.quellen + " Quellzeilen übernommen, " + n.neu + " neue Liefergegenstände"); rwRender(); } catch (err) { toast("CSV nicht lesbar: Spalten passen nicht"); } }); t.value = ""; return; }
-  if (t.id === "rwjson" && t.files[0]) { t.files[0].text().then(x => { try { const n = RW.importRules(x); toast(n + " Liefergegenstände importiert"); rwRender(); } catch (err) { toast("Import fehlgeschlagen: Datei passt nicht zum Format"); } }); t.value = ""; return; }
+  if (t.id === "rwcsv" && t.files[0]) { t.files[0].arrayBuffer().then(b => { try { const n = RW.importCsv(b); toast(n.quellen + " Quellzeilen in den Entwurf übernommen, " + n.neu + " neue Liefergegenstände" + (n.ohne ? ", " + n.ohne + " Zeilen ohne zugeordnetes App-Gate" : "")); rwRender(); } catch (err) { toast(err.message === "gesperrt" ? "Der Entwurf liegt beim PGB und ist gesperrt" : "CSV nicht lesbar: Spalten passen nicht"); } }); t.value = ""; return; }
+  if (t.id === "rwjson" && t.files[0]) { t.files[0].text().then(x => { try { const n = RW.importRules(x); toast(n + " Liefergegenstände in den Entwurf importiert"); rwRender(); } catch (err) { toast(err.message === "gesperrt" ? "Der Entwurf liegt beim PGB und ist gesperrt" : "Import fehlgeschlagen: Datei passt nicht zum Format"); } }); t.value = ""; return; }
   if (t.dataset.pdate !== undefined) { S.setDate(t.dataset.id, t.value); toast("Plantermin gespeichert"); return; }
   if (t.dataset.fileinput !== undefined) { addFiles(t); return; }
+  if (t.dataset.ts && d) { const x = d.c.ts[+t.dataset.i]; if (x) { x[t.dataset.ts] = t.dataset.ts === "n" ? t.value.slice(0, 60) : t.value; S.guardSpur(d); S.save(); if (t.dataset.ts !== "n") keepScroll(vWizard); } return; }
+  if (t.dataset.crk !== undefined) { const k = $("#crk").value; $("#creurw").hidden = k !== "budget"; $("#crroute").textContent = crRouteTxt(k, $("#creur").value); return; }
   if (t.dataset.f && d) { d[t.dataset.f] = t.value; S.save(); return; }
   if (t.dataset.stepin && d) { setPct(t.dataset.stepin, parseInt(t.value, 10) || 0, true); return; }
   if (t.dataset.hc !== undefined) { S.setHc(t.checked); applyTheme(); return; }
@@ -430,6 +558,8 @@ document.addEventListener("input", e => {
   const t = e.target, d = S.state.draft;
   if (t.id === "q") { ui.q = t.value; $("#listBody").innerHTML = listRows(); return; }
   if (t.dataset.why && d) { d.c.why[t.dataset.why] = t.value; S.save(); return; }
+  if (t.dataset.ts === "n" && d) { const x = d.c.ts[+t.dataset.i]; if (x) { x.n = t.value.slice(0, 60); S.save(); } return; }
+  if (t.dataset.crk !== undefined && t.id === "creur") { $("#crroute").textContent = crRouteTxt($("#crk").value, t.value); return; }
   if (t.dataset.f && d) { d[t.dataset.f] = t.value; S.save(); }
 });
 dlg.addEventListener("click", e => { if (e.target === dlg) closeDlg(); });

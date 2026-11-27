@@ -1,0 +1,7 @@
+{
+  "name": "pfad",
+  "private": true,
+  "type": "module",
+  "description": "PEP-Konfigurator der Studienarbeit T3100 (statische PWA, keine Abhängigkeiten)",
+  "scripts": {"test": "node tests/referenzfaelle.test.mjs"}
+}

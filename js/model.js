@@ -11,13 +11,17 @@ export function shares(c) {
 }
 export function compute(c, rr0) {
   const rr = asRules(rr0), ok = c.thr.every(Boolean), MODS = mods(rr), TH = rr.thr, sh = shares(c);
-  const sp = !c.q[0] ? "C" : (!c.q[1] ? "B" : (c.q[2] ? "A" : "B"));
-  const hc = !!(c.q[0] && c.q[1]);
+  // Spur: drei Fragen ergeben den Vorschlag (pk); eine Abweichung (c.ov) gilt nur mit Begründung (Prüfung im Assistenten)
+  const q = c.q || [], has = v => v === 0 || v === 1 || v === true || v === false;
+  const qok = has(q[0]) && (!q[0] || (has(q[1]) && (!q[1] || has(q[2]))));
+  const pk = !q[0] ? "C" : (!q[1] ? "B" : (q[2] ? "A" : "Bh"));
+  const ov = c.ov && ["A", "Bh", "B", "C"].includes(c.ov.k) && c.ov.k !== pk ? c.ov.k : null;
+  const key0 = ov || pk, sp = key0 === "Bh" ? "B" : key0, hc = key0 === "A" || key0 === "Bh";
   const v = hc ? Math.max(sh.hw, sh.sw) : sh.sw; // Annahme: bei Hardwareänderung zählt der höhere Anteil
   const st0 = v >= TH.full ? "Full" : v <= TH.light ? "Light" : "Standard";
   const risk = Array.isArray(c.risk) && c.risk.some(Boolean); // Risiko-Korrektur: eine Stufe höher, nie niedriger
   const st = risk ? (st0 === "Light" ? "Standard" : "Full") : st0;
-  const key = sp === "B" ? (hc ? "Bh" : "B") : sp;
+  const key = key0;
   // Wirksamer Typ eines Bausteins in dieser Spur: stufe, pflicht, spur (vorgeschlagen), opt oder na
   const ty = m => m.ty === "stufe" ? "stufe" : ({p: "pflicht", v: "spur", o: "opt"}[(m.pf && m.pf[key]) || "-"] || "na");
   const avail = m => m.ty === "stufe" ? st !== "Full" : ty(m) !== "na";
@@ -39,7 +43,7 @@ export function compute(c, rr0) {
   const ab = MODS.filter(m => ty(m) === "spur" && !isOn(m));
   const rv = on.filter(m => m.rv).map(m => ({n: m.rv.n, t: m.t, x: m.ph + m.rv.p, r: m.rv.r, rv: 1, mid: m.id}));
   const order = [...gates, ...rv].sort((a, b) => a.x - b.x);
-  return {ok, sp, hc, st, st0, risk, key, ty, sh, light, avail, defOn, isOn, gates, rv, order, on, ab, rr, ver: rr.ver, n: ok ? order.length : 0, path: ok ? sp + "-" + st : "ohne PEP"};
+  return {ok, qok, pk, ov, ovWhy: ov ? String(c.ov.why || "").trim() : "", sp, hc, st, st0, risk, key, ty, sh, light, avail, defOn, isOn, gates, rv, order, on, ab, rr, ver: rr.ver, n: ok && qok ? order.length : 0, path: !ok ? "ohne PEP" : !qok ? "Spur offen" : sp + "-" + st};
 }
 export const phaseOf = o => Math.min(4, Math.max(0, Math.ceil(o.x) - 1));
 

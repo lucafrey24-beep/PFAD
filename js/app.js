@@ -6,7 +6,7 @@ import * as RW from "./rules.js";
 import * as S from "./store.js";
 import * as C from "./cfg.js";
 
-const VERSION = "1.8.0";
+const VERSION = "1.8.1";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const view = $("#view"), bar = $("#appbar"), tabs = $("#tabs"), dlg = $("#dlg");
@@ -38,7 +38,7 @@ dlg.addEventListener("touchend", e => { if (sy === null) return; const d = e.cha
 const stBadge = p => { const s = STATUS[p.status]; return '<span class="dot ' + s[1] + '"></span>' + esc(s[0]); };
 const pathPill = r => '<span class="pill-path' + (r.ok ? "" : " none") + '">' + esc(r.path) + "</span>";
 const seg = (act, items, cur, extra = "") => '<div class="seg" role="group"' + extra + ">" + items.map(([v, l]) => '<button type="button" data-act="' + act + '" data-v="' + esc(v) + '" aria-pressed="' + (String(v) === String(cur)) + '">' + esc(l) + "</button>").join("") + "</div>";
-const yn = (act, i, v) => '<div class="seg inl" role="group">' + [[1, "Ja"], [0, "Nein"]].map(([x, l]) => '<button type="button" data-act="' + act + '" data-i="' + i + '" data-v="' + x + '" aria-pressed="' + (!!v === !!x) + '">' + l + "</button>").join("") + "</div>";
+const yn = (act, i, v) => '<div class="seg inl" role="group">' + [[1, "Ja"], [0, "Nein"]].map(([x, l]) => '<button type="button" data-act="' + act + '" data-i="' + i + '" data-v="' + x + '" aria-pressed="' + (v !== null && v !== undefined && !!v === !!x) + '">' + l + "</button>").join("") + "</div>";
 
 /* ---------- Gerüst ---------- */
 function route() { const h = (location.hash || "#/vorhaben").replace(/^#\/?/, "").split("/"); return {tab: h[0] || "vorhaben", id: h[1] ? decodeURIComponent(h[1]) : "", raw: h}; }
@@ -114,7 +114,7 @@ function vDetail(r) {
   if (p.crs.length || (pl && act && c.ok)) h += '<h2 class="sec">Änderungsanträge</h2>' + (p.crs.length ? '<ul class="group">' + p.crs.map(x => '<li class="row"><span class="t">' + esc(x.id) + ": " + esc(x.text) + '<span class="s">' + esc(CRK[x.kat] ? CRK[x.kat].t : x.kat) + (x.eur ? " · " + x.eur.toLocaleString("de-DE") + " €" : "") + (x.wk ? " · " + x.wk + " Wochen" : "") + " · " + esc(crSt[x.st] || x.st) + (x.dec ? " (" + esc(x.dec) + ")" : "") + "</span></span></li>").join("") + "</ul>" : "") + (pl && act && c.ok ? '<button class="btn" data-act="crdlg" data-id="' + esc(p.id) + '">Änderungsantrag stellen</button>' : "");
   const sh = c.sh || shares(p.c);
   h += '<h2 class="sec">Konfiguration</h2><ul class="group">' +
-    row("Spur", c.ok ? c.sp + " · " + SPN[c.sp] : "–") + row("Generationsstufe", c.ok ? c.st : "–") + row("Neuentwicklungsanteil", (c.hc ? "HW " + sh.hw + " % · " : "") + "SW " + sh.sw + " %" + (sh.hwList || sh.swList ? " (aus Teilsystemen)" : "")) +
+    row("Spur", c.ok ? c.sp + " · " + SPN[c.sp] + (c.ov ? " (Vorschlag " + c.pk + ", abweichend: " + c.ovWhy + ")" : " (wie vorgeschlagen)") : "–") + row("Generationsstufe", c.ok ? c.st : "–") + row("Neuentwicklungsanteil", (c.hc ? "HW " + sh.hw + " % · " : "") + "SW " + sh.sw + " %" + (sh.hwList || sh.swList ? " (aus Teilsystemen)" : "")) +
     row("Referenzprodukt", p.ref || "–") + (p.idea ? row("Aus Idee", p.idea) : "") + (p.lcOwner ? row("Verantwortung im Lebenszyklus", p.lcOwner) : "") + (p.pred ? row("Vorgänger", p.pred) : "") + (p.succ ? row("Folgegeneration", p.succ) : "") + row("Projektleitung", p.pl) + row("Project Sponsor", p.sponsor || "–") + row("Product Owner", p.po || "–") +
     (p.kpis ? row("Kennzahlen", p.kpis) : "") + row("Zuletzt freigegeben", p.last) + row("Nächster Meilenstein", p.next + (p.date ? " · " + fmtD(p.date) : "")) + row("Konfigurationsversion", String(p.ver || 1)) + "</ul>" +
     (pl && act ? '<div class="card" style="margin-top:12px"><label class="f" for="pdate">Plantermin nächster Meilenstein</label><input id="pdate" type="date" data-pdate data-id="' + esc(p.id) + '" value="' + esc(p.date || "") + '"></div>' : "") + (p.cfgPending ? '<div class="warn">Konfigurationsänderung ' + esc(p.cfgPending.from) + " → " + esc(p.cfgPending.to) + " wartet auf Freigabe am nächsten Gate.</div>" : "");
@@ -231,7 +231,7 @@ function vQueue() {
   if (role === "PPB" && D && D.pending) h += '<h2 class="sec">Regelwerk-Änderung</h2><div class="qitem"><h3>Regelwerk v' + (RW.rules().ver + 1) + ' (Entwurf von Product Governance)</h3><p class="meta">Eingereicht ' + esc(fmtD(D.pending.at)) + '</p><ul class="lfl">' + RW.diffDraft().map(t => "<li>" + esc(t) + "</li>").join("") + '</ul><div class="btns"><button class="btn primary" data-act="rwapprove">Freigeben</button><button class="btn" data-act="rwrejdlg">Ablehnen</button><a class="btn" href="#/mehr/regelwerk">Entwurf ansehen</a></div></div>';
   if (role === "PG" && D && D.rej) h += '<div class="warn"><b>PGB hat den Regelwerk-Entwurf abgelehnt:</b> ' + esc(D.rej) + ' <a href="#/mehr/regelwerk">Überarbeiten</a></div>';
   if (role === "WP") { const L = S.wpCRs(); h += '<h2 class="sec">Rahmenänderungen (' + L.length + ")</h2>" + (L.length ? L.map(({p, c}) => '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + "</h3></a><p class=\"meta\">" + esc(c.id) + " · " + esc(CRK[c.kat].t) + (c.eur ? " · " + c.eur.toLocaleString("de-DE") + " €" : "") + " · " + esc(fmtD(c.at)) + "</p><p>" + esc(c.text) + '</p><div class="btns"><button class="btn primary" data-act="crdecdlg" data-ok="1" data-id="' + esc(p.id) + '" data-c="' + esc(c.id) + '">Annehmen</button><button class="btn destructive" data-act="crdecdlg" data-ok="0" data-id="' + esc(p.id) + '" data-c="' + esc(c.id) + '">Ablehnen</button></div></div>').join("") : '<div class="empty">Keine Rahmenänderungen offen.</div>'); }
-  const card = p => { const c = S.cp(p); return '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + '</h3></a><p class="meta">' + esc(p.id) + " · " + esc(p.pl) + " · eingereicht " + esc(p.submitted || "–") + " · " + pathPill(c) + "</p><p class=\"meta\">Zur Freigabe: " + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + " · wartet seit " + S.waitDays(p) + " Tag(en)</p>" + evLine(p) + subInfo(p, false) + actionsFor(p) + "</div>"; };
+  const card = p => { const c = S.cp(p); return '<div class="qitem"><a href="#/vorhaben/' + encodeURIComponent(p.id) + '"><h3>' + esc(p.name) + '</h3></a><p class="meta">' + esc(p.id) + " · " + esc(p.pl) + " · eingereicht " + esc(p.submitted || "–") + " · " + pathPill(c) + (c.ov ? " · Spur abweichend vom Vorschlag" : "") + "</p><p class=\"meta\">Zur Freigabe: " + esc(subLbl(p)) + (p.rec ? ". " + esc(p.rec) : "") + " · wartet seit " + S.waitDays(p) + " Tag(en)</p>" + evLine(p) + subInfo(p, false) + actionsFor(p) + "</div>"; };
   if (["MS", "PPB", "WP"].includes(role)) h += '<h2 class="sec">Wartet auf mich (' + mine.length + ")</h2>" + (mine.length ? mine.map(card).join("") : '<div class="empty">Nichts zu tun. Hier erscheinen Vorhaben, sobald ein Schritt eingereicht ist.</div>');
   if (others.length) h += '<h2 class="sec">Bei anderen (' + others.length + ')</h2><ul class="group">' + others.map(p => '<li><a class="row" href="#/vorhaben/' + encodeURIComponent(p.id) + '"><span class="t">' + esc(p.name) + '<span class="s">' + esc(subLbl(p)) + " · " + esc(stageTxt(p)) + '</span></span><span class="chev">›</span></a></li>').join("") + "</ul>";
   if (held.length) h += '<h2 class="sec">Hold (' + held.length + ')</h2><ul class="group">' + held.map(p => '<li class="row"><span class="t">' + esc(p.name) + '<span class="s">' + esc(p.note) + (S.holdDue(p) ? " · Wiedervorlage fällig" : "") + "</span></span>" + (role === "PPB" ? '<button class="btn small" data-act="resume" data-id="' + esc(p.id) + '">Aufheben</button>' : "") + "</li>").join("") + "</ul>";
@@ -374,14 +374,20 @@ function vWizard() {
     h += '<p class="meta">Erst wenn alle drei Schwellen erreicht sind, entsteht ein PEP-Pfad.</p><div class="card" style="padding-top:4px;padding-bottom:4px">' + T.map((t, i) => '<div class="qrow" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span>' + t + "</span>" + yn("thr", i, c.thr[i]) + "</div>").join("") + "</div>" +
       (r.ok ? '<div class="note">Alle drei Schwellen erreicht: PEP-pflichtig.</div>' : '<div class="warn">Unter den Schwellen: Das Vorhaben wird als Roadmap-Eintrag ohne PEP angelegt.</div>');
   } else if (w.step === 2) {
-    const cur = C.spurKey(r);
-    h += '<p class="meta">Die Spur legt Takt, Bausteine und den Satz an Liefergegenständen fest. Jede Karte zeigt, was sich am Pfad ändert.</p><div class="cgrid">' + C.SPUREN.map((x, i) => {
-      const hs = C.sumOf(C.withSpur(c, x));
-      return C.card({sel: cur === x.k, title: x.t, sub: x.n, attrs: [["Hardware", x.hw], ["Takt", x.takt], ["Liefergegenstände", hs.dv + " (Spur " + hs.r.sp + ")"], ["Gates", String(hs.gates)], ["Reviews", String(hs.rv)]],
-        delta: C.diff(s, hs), act: ' data-act="cfgspur" data-i="' + i + '"', label: "Auswählen", dis: !r.ok});
-    }).join("") + "</div>";
-    const Q = ["Läuft das Ergebnis auf einem Gerät?", "Wird die Hardware neu entwickelt oder verändert?", "Führt die Hardware das Vorhaben (Software folgt dem Hardwarestand)?"];
-    h += '<details class="card cq"><summary>Mit drei Fragen bestimmen (Entscheidungsbaum)</summary>' + Q.map((t, i) => '<div class="qrow' + (i && !c.q[0] ? " off" : i === 2 && !c.q[1] ? " off" : "") + '" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span>' + t + "</span>" + yn("q", i, c.q[i]) + "</div>").join("") + "</details>";
+    // Erst die drei Fragen (Pflicht), dann der Vorschlag; eine andere Spur nur mit Begründung
+    const Q = ["Braucht das Produkt ein eigenes Gerät, um genutzt zu werden?", "Wird dafür Hardware neu entwickelt oder wesentlich geändert?", "Bestimmt die Hardware den kritischen Pfad, etwa durch Werkzeuge, Zulassung oder Lieferzeiten?"];
+    const show = [true, c.q[0] === 1, c.q[0] === 1 && c.q[1] === 1];
+    h += '<p class="meta">Beantworte die drei Fragen. Daraus schlägt die App die Spur vor. Eine andere Spur ist möglich, braucht aber eine Begründung.</p>';
+    h += '<div class="card">' + Q.map((t, i) => show[i] ? '<div class="qrow" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding-right:0"><span><b>' + (i + 1) + ".</b> " + t + "</span>" + yn("q", i, c.q[i]) + "</div>" : "").join("") + "</div>";
+    if (!r.qok) h += '<div class="empty">Die Spur wird vorgeschlagen, sobald die Fragen beantwortet sind.</div>';
+    else {
+      const P = C.SPUREN.find(x => x.k === r.pk), why = r.pk === "C" ? "Kein eigenes Gerät" : r.pk === "B" ? "Gerät vorhanden, keine neue oder wesentlich geänderte Hardware" : r.pk === "Bh" ? "Hardware wird geändert, bestimmt aber nicht den kritischen Pfad" : "Hardware wird entwickelt und bestimmt den kritischen Pfad";
+      h += '<div class="spur"><div class="L">' + esc(P.t.slice(-1)) + "</div><div><b>Vorschlag: " + esc(P.t) + " · " + esc(P.n) + "</b><p>" + esc(why) + "." + (r.ov ? " Gewählt: " + esc(C.SPUREN.find(x => x.k === r.key).t + " · " + C.SPUREN.find(x => x.k === r.key).n) + " (Abweichung)." : "") + "</p></div></div>";
+      if (r.ov) h += '<div class="card"><label class="f" for="w-ovwhy">Begründung für die Abweichung vom Vorschlag (Pflicht)</label><textarea id="w-ovwhy" data-ovwhy maxlength="400">' + esc(c.ov.why || "") + '</textarea><p class="foot" style="margin:6px 0 0">Das PGB sieht Vorschlag, Wahl und Begründung und entscheidet an G1 über die Spur.</p></div>';
+      h += '<div class="cgrid">' + C.SPUREN.map((x, i) => { const hs = C.sumOf(C.withSpur(c, x)), prop = x.k === r.pk;
+        return C.card({sel: r.key === x.k, badge: prop ? "Vorschlag" : "", title: x.t, sub: x.n, attrs: [["Hardware", x.hw], ["Takt", x.takt], ["Liefergegenstände", hs.dv + " (Spur " + hs.r.sp + ")"], ["Gates", String(hs.gates)], ["Reviews", String(hs.rv)]],
+          delta: C.diff(s, hs), act: ' data-act="cfgspur" data-i="' + i + '"', label: prop ? "Vorschlag übernehmen" : "Abweichend wählen", dis: !r.ok}); }).join("") + "</div>";
+    }
   } else if (w.step === 3) {
     h += '<p class="meta">Die Stufe folgt aus dem Anteil der Neuentwicklung. Eine Karte setzt Beispielwerte, die Anteile darunter genau einstellen.</p><div class="cgrid c3" id="cfgStufe">' + stufeCards(c, s) + "</div>";
     h += tsBlock(c, r) + riskBlock(c, r) + '<div class="card">' + stepper("hw", "Hardware-Neuentwicklung", r.sh.hw, !r.hc || r.sh.hwList) + stepper("sw", "Software-Neuentwicklung", r.sh.sw, r.sh.swList) + (r.sh.hwList || r.sh.swList ? '<p class="foot" style="margin:8px 0 0">Werte aus der Teilsystemliste sind gesperrt. Ohne Liste gilt die Schätzung.</p>' : "") +
@@ -494,7 +500,7 @@ function subDlg(p) {
 }
 function msDlg(p) {
   const o = S.subStep(p), x = S.stepOf(p, o.n), nd = S.needs(p, o), r = S.cp(p), a = x.ans || {}, m = S.missingDelivs(p, o);
-  let h = '<h2 id="dlg-h">Prüfung durch das Projektteam (MS Gate Committee)</h2><p class="meta">' + esc(S.stepLabel(o)) + " · " + esc(p.name) + "</p>";
+  let h = '<h2 id="dlg-h">Prüfung durch das Projektteam (MS Gate Committee)</h2><p class="meta">' + esc(S.stepLabel(o)) + " · " + esc(p.name) + "</p>" + (r.ov ? '<div class="warn"><b>Spur abweichend vom Vorschlag:</b> gewählt ' + esc(r.key) + ", vorgeschlagen " + esc(r.pk) + ". Begründung: " + esc(r.ovWhy) + "</div>" : "");
   if (nd.lf.length) h += "<h3>Leitfragen</h3>" + nd.lf.map((q, i) => '<p class="meta" style="margin:8px 0 2px"><b>' + esc(q.q) + "</b><br>" + esc(a.lf ? a.lf[q.k] || "keine Antwort" : "keine Antwort") + "</p>" + radio("mlf" + i, [["ok", "beantwortet"], ["offen", "offen"]], "")).join("");
   if (a.rg) h += '<p class="meta">Reifegrad laut PL: Hardware ' + esc(a.rg.hw) + ", Software " + esc(a.rg.sw) + ", System " + esc(a.rg.sys) + "</p>";
   if (r.sp === "A" || r.sp === "B") h += "<h3>Gemeinsamer Stand von Hardware und Software</h3>" + [["mhw", "Prüfvermerk Hardware-Entwicklung"], ["msw", "Prüfvermerk Software-Entwicklung"]].map(([id, l]) => '<label class="row" style="padding-left:0"><span class="t">' + l + '</span><span class="sw"><input id="' + id + '" type="checkbox"><span></span></span></label>').join("");
@@ -583,11 +589,13 @@ document.addEventListener("click", e => {
     case "preset": { const p = PRESETS[+el.dataset.i]; d.c = C.withPreset(d.c, p); d.c.lastSp = null; S.guardSpur(d); ui.wizErr = ""; S.save(); keepScroll(vWizard); break; }
     case "cfggo": wizGo(+el.dataset.v); break;
     case "cfgjump": document.getElementById(el.dataset.v)?.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth", block: "start"}); break;
-    case "cfgspur": d.c = C.withSpur(d.c, C.SPUREN[+el.dataset.i]); S.guardSpur(d); S.save(); keepScroll(vWizard); break;
+    case "cfgspur": { d.c = C.withSpur(d.c, C.SPUREN[+el.dataset.i]); S.guardSpur(d); S.save(); keepScroll(vWizard); const f = document.getElementById("w-ovwhy"); if (f) { f.scrollIntoView({block: "center"}); f.focus({preventScroll: true}); } break; }
     case "cfgstufe": { const x = C.withStufe(d.c, el.dataset.v); d.c.hw = x.hw; d.c.sw = x.sw; S.save(); keepScroll(vWizard); break; }
     case "thr": d.c.thr[+el.dataset.i] = +el.dataset.v; S.guardSpur(d); S.save(); keepScroll(vWizard); break;
-    case "q": d.c.q[+el.dataset.i] = +el.dataset.v; if (!d.c.q[0]) { d.c.q[1] = 1; d.c.q[2] = 1; } S.guardSpur(d); S.save(); keepScroll(vWizard); break;
-    case "wiznext": { if (d.step === 0 && (!d.name.trim() || !d.pl.trim())) { ui.wizErr = !d.name.trim() ? "Bitte einen Namen eingeben." : "Bitte die Projektleitung angeben."; vWizard(); break; } wizGo(Math.min(5, d.step + 1)); break; }
+    case "q": { const i = +el.dataset.i, v = +el.dataset.v; d.c.q = d.c.q || [null, null, null]; d.c.q[i] = v; if (i === 0 && !v) { d.c.q[1] = null; d.c.q[2] = null; } if (i === 1 && !v) d.c.q[2] = null;
+      const r0 = compute(d.c, S.rxOf(d)); if (d.c.ov && d.c.ov.k === r0.pk) delete d.c.ov; S.guardSpur(d); S.save(); keepScroll(vWizard); break; }
+    case "wiznext": { if (d.step === 0 && (!d.name.trim() || !d.pl.trim())) { ui.wizErr = !d.name.trim() ? "Bitte einen Namen eingeben." : "Bitte die Projektleitung angeben."; vWizard(); break; }
+      if (d.step === 2) { const r0 = compute(d.c, S.rxOf(d)); if (r0.ok && !r0.qok) { ui.wizErr = "Bitte die drei Fragen beantworten."; vWizard(); break; } if (r0.ov && !r0.ovWhy) { ui.wizErr = "Bitte begründen, warum du von der vorgeschlagenen Spur abweichst."; vWizard(); break; } } wizGo(Math.min(5, d.step + 1)); break; }
     case "wizprev": wizGo(Math.max(0, d.step - 1)); break;
     case "wizsum": { const r = compute(d.c, S.rxOf(d)); openDlg('<h2 id="dlg-h">Übersicht</h2><p class="meta">' + esc(d.name || "Ohne Namen") + " · " + esc(d.pc) + '</p><div class="spur"><div class="L">' + r.sp + "</div><div><b>" + esc(r.path) + (r.ok ? " · " + r.n + " Reviews" : "") + "</b><p>" + r.on.length + " Bausteine aktiv, " + r.ab.length + ' abgewählt</p></div></div><div class="btns"><button class="btn" data-act="close">Weiter bearbeiten</button><button class="btn destructive" data-act="wizdrop">Entwurf verwerfen</button></div>'); break; }
     case "wizleave": location.hash = d.meta ? "#/vorhaben/" + encodeURIComponent(d.meta) : "#/vorhaben"; break;
@@ -628,6 +636,7 @@ document.addEventListener("input", e => {
   const t = e.target, d = S.state.draft;
   if (t.id === "q") { ui.q = t.value; $("#listBody").innerHTML = listRows(); return; }
   if (t.dataset.why && d) { d.c.why[t.dataset.why] = t.value; S.save(); return; }
+  if (t.dataset.ovwhy !== undefined && d && d.c.ov) { d.c.ov.why = t.value.slice(0, 400); S.save(); return; }
   if (t.dataset.ts === "n" && d) { const x = d.c.ts[+t.dataset.i]; if (x) { x.n = t.value.slice(0, 60); S.save(); } return; }
   if (t.dataset.crk !== undefined && (t.id === "creur" || t.id === "crwk")) { $("#crroute").textContent = crRouteTxt($("#crk").value, $("#creur").value, $("#crwk").value); return; }
   if (t.dataset.f && d) { d[t.dataset.f] = t.value; S.save(); }

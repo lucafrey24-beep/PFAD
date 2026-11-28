@@ -44,6 +44,11 @@ ok(compute(c30, frozen).path === "B-Standard", "Vorher: B mit 30 % ist Standard"
 RW.edit(R => { R.thr.light = 35; }); RW.submitDraft(); RW.approveDraft("Test");
 ok(compute(c30).path === "B-Light", "Neues Regelwerk (Light bis 35 %): neue Vorhaben werden B-Light");
 ok(compute(c30, frozen).path === "B-Standard" && compute(c30, frozen).gates.some(g => g.n === "G1"), "Festgeschrieben: bleibt B-Standard mit getrenntem G1 und G2");
+// Spur: erst alle Fragen, dann Vorschlag; Abweichung nur mit Begründung (die Begründung prüft der Assistent)
+const offen = cfg([1, null, null], 50, 50); ok(!compute(offen).qok && compute(offen).path === "Spur offen", "Fragen offen: keine Spur, kein Pfad");
+ok(compute(cfg([0, null, null], 0, 50)).qok && compute(cfg([0, null, null], 0, 50)).pk === "C", "Erste Frage nein reicht: Vorschlag Spur C");
+const abw = Object.assign(cfg([1, 1, 0], 50, 50), {ov: {k: "A", why: "Zulassung bestimmt den Termin"}}); const ra = compute(abw);
+ok(ra.pk === "Bh" && ra.key === "A" && ra.sp === "A" && ra.gates.some(g => g.n === "G3"), "Abweichung auf Spur A wirkt auf Pfad (G3), Vorschlag bleibt B mit HW");
 // Risiko-Korrektur (Ergänzung V2): hebt die Stufe um eine an, nie ab
 ok(compute(cfg([1, 0, 1], 0, 15, {}, [1, 0, 0])).st === "Standard" && compute(cfg([1, 0, 1], 0, 15)).st === "Light", "Risiko-Korrektur: Light wird Standard");
 ok(compute(cfg([1, 1, 1], 70, 70, {}, [0, 1, 1])).st === "Full", "Risiko-Korrektur: Full bleibt Full");

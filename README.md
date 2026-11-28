@@ -19,6 +19,7 @@ Aufbau wie ein Autokonfigurator: links die Schritte (Schnellstart, Einstufung, S
 
 ## Ablauf (ab 1.8.0, nach Fragenkatalog vom 28.11.2026 und Visio PFAD_Prozess_v5)
 - **Ideenpool:** Jeder reicht Ideen ein, bewertet (1 bis 5) und kommentiert. Das PGB stößt Ideen an, eine Projektleitung übernimmt sie und legt daraus ein Vorhaben an.
+- **Spur (ab 1.8.1):** Die drei Fragen zur Spur sind Pflicht; erst danach schlägt die App die Spur vor. Eine andere Spur ist wählbar, braucht aber eine Begründung. Vorschlag, Wahl und Begründung stehen im Nachweis und sind für MS Gate Committee und PGB sichtbar.
 - **Konfiguration:** Einstufung, Spur, Teilsystemliste (ab Standard Pflicht), Generationsstufe mit Risiko-Korrektur, Bausteine (je Spur Pflicht, vorgeschlagen oder optional; im Regelwerk pflegbar).
 - **G1:** Die Projektleitung hakt die Nachweise ab, beantwortet die Leitfragen, bestätigt den Sponsor und reicht ein; das PGB entscheidet direkt.
 - **Ab G2:** Das MS Gate Committee (= Projektteam) prüft auf Vollständigkeit, in Spur A und B mit Prüfvermerk HW und SW; das PGB entscheidet. Freigabe nur, wenn alles vorliegt (kein Go mit offenen Punkten). Regulatorik nicht erfüllt: Modify.

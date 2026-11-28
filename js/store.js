@@ -65,7 +65,7 @@ function logE(p, who, x) { p.log.push({t: fmtD(TODAY), who, x}); }
 const plWho = p => "Projektleitung (" + p.pl + ")";
 
 /* ---------- Konfigurator-Entwurf ---------- */
-export const emptyC = () => ({thr: [1, 1, 1], q: [1, 1, 1], hw: 60, sw: 50, sel: {}, opt: {}, why: {}, ts: [], risk: [0, 0, 0], lastSp: null});
+export const emptyC = () => ({thr: [1, 1, 1], q: [null, null, null], hw: 60, sw: 50, sel: {}, opt: {}, why: {}, ts: [], risk: [0, 0, 0], lastSp: null});
 export const newWiz = () => ({meta: null, name: "", pc: PCS[0], pl: "", sp: "", po: "", typ: "", date: "", desc: "", ref: "", pred: "", idea: "", step: 0, c: emptyC()});
 export const rxOf = w => (w && w.meta && byId(w.meta) && byId(w.meta).rx) || undefined;
 export function guardSpur(w) { const r = compute(w.c, rxOf(w)), k = r.sp + (r.hc ? "h" : ""); if (w.c.lastSp && w.c.lastSp !== k) w.c.sel = {}; w.c.lastSp = k; }
@@ -148,6 +148,8 @@ export function submitWiz(w) {
   const miss = missingWhy(w);
   if (miss.length) return {error: "Begründung fehlt für: " + miss.map(m => m.t).join(", "), step: 4};
   const p0 = w.meta ? byId(w.meta) : null, r = compute(w.c, p0 && p0.rx ? p0.rx : undefined), snap = JSON.parse(JSON.stringify(w.c)); snap.lastSp = null;
+  if (r.ok && !r.qok) return {error: "Bitte die drei Fragen zur Spur beantworten", step: 2};
+  if (r.ok && r.ov && !r.ovWhy) return {error: "Bitte begründen, warum von der vorgeschlagenen Spur abgewichen wird", step: 2};
   if (r.ok && r.st0 !== "Full" && !(w.c.ts || []).length) return {error: "Ab Stufe Standard ist die Teilsystemliste Pflicht (Schritt Generationsstufe)", step: 3};
   const meta = {name: w.name.trim(), pc: w.pc, pl: w.pl.trim(), sponsor: (w.sp || "").trim(), po: (w.po || "").trim(), ref: w.ref.trim(), desc: w.desc.trim()};
   if (p0) {
@@ -450,7 +452,7 @@ export function csvRoadmap(list) {
 }
 export function nachweis(p) {
   const r = cp(p), sh = shares(p.c);
-  return {id: p.id, vorhaben: p.name, productCenter: p.pc, projektleitung: p.pl, projectSponsor: p.sponsor || null, productOwner: p.po || null, pepPfad: r.path, spur: r.ok ? r.sp + " " + SPN[r.sp] : null, stufe: r.ok ? r.st : null,
+  return {id: p.id, vorhaben: p.name, productCenter: p.pc, projektleitung: p.pl, projectSponsor: p.sponsor || null, productOwner: p.po || null, pepPfad: r.path, spur: r.ok ? r.sp + " " + SPN[r.sp] : null, spurVorschlag: r.ok ? r.pk : null, spurAbweichung: r.ov ? {gewaehlt: r.ov, begruendung: r.ovWhy} : null, stufe: r.ok ? r.st : null,
     regelwerk: p.rx ? {version: p.rx.ver, festgeschrieben: p.fix ? p.fix.at : null, schwellen: p.rx.thr} : {version: RW.rules().ver, festgeschrieben: null, hinweis: "noch kein Go, es gilt das aktuelle Regelwerk"},
     neuentwicklungsanteil: {hardware: r.hc ? sh.hw : null, software: sh.sw, ausTeilsystemliste: {hardware: sh.hwList, software: sh.swList}},
     teilsysteme: (p.c.ts || []).map(t => ({name: t.n, domaene: t.d, status: TSS[t.s] || t.s})), referenzprodukt: p.ref || null, vorgaenger: p.pred || null, nachfolger: p.succ || null,

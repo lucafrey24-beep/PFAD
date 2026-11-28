@@ -51,7 +51,8 @@ export const SPUREN = [
   {k: "C", q: [0, 1, 1], t: "Spur C", n: "Software & Data", hw: "kein eigenes Gerät", takt: "Sprints, laufende Releases, Kennzahlen"}
 ];
 export const spurKey = r => r.sp === "B" ? (r.hc ? "Bh" : "B") : r.sp;
-export function withSpur(c, s) { const x = clone(c), k0 = spurKey(cmp(c)); x.q = [...s.q]; if (spurKey(cmp(x)) !== k0) x.sel = {}; return x; }
+// Spurkarte wählen: Vorschlag aus den drei Fragen übernehmen oder abweichend wählen (dann Begründung Pflicht)
+export function withSpur(c, s) { const x = clone(c), r0 = cmp(c), k0 = spurKey(r0); if (s.k === r0.pk) delete x.ov; else x.ov = {k: s.k, why: (c.ov && c.ov.why) || ""}; if (spurKey(cmp(x)) !== k0) x.sel = {}; return x; }
 export function stufeValue(st) { const T = ctxRules().thr; return st === "Light" ? Math.max(0, T.light - 5) : st === "Full" ? Math.min(100, T.full + 15) : Math.round((T.light + T.full) / 2); }
 export function withStufe(c, st) { const x = clone(c), v = stufeValue(st); x.sw = v; if (cmp(c).hc) x.hw = v; return x; }
 export function withMod(c, m, on) { const x = clone(c); x.sel = x.sel || {}; x.sel[m.id] = on; return x; }

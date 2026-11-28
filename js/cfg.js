@@ -54,8 +54,8 @@ export const spurKey = r => r.sp === "B" ? (r.hc ? "Bh" : "B") : r.sp;
 export function withSpur(c, s) { const x = clone(c), k0 = spurKey(cmp(c)); x.q = [...s.q]; if (spurKey(cmp(x)) !== k0) x.sel = {}; return x; }
 export function stufeValue(st) { const T = ctxRules().thr; return st === "Light" ? Math.max(0, T.light - 5) : st === "Full" ? Math.min(100, T.full + 15) : Math.round((T.light + T.full) / 2); }
 export function withStufe(c, st) { const x = clone(c), v = stufeValue(st); x.sw = v; if (cmp(c).hc) x.hw = v; return x; }
-export function withMod(c, m, on) { const x = clone(c); if (m.ty === "spur") { x.sel = x.sel || {}; x.sel[m.id] = on; } else { x.opt = x.opt || {}; x.opt[m.id] = on ? 1 : 0; } return x; }
-export function withPreset(c, p) { const x = clone(c); Object.assign(x, {thr: [1, 1, 1], q: [...p.q], hw: p.hw, sw: p.sw, opt: {...p.opt}, sel: {}, ts: []}); return x; }
+export function withMod(c, m, on) { const x = clone(c); x.sel = x.sel || {}; x.sel[m.id] = on; return x; }
+export function withPreset(c, p) { const x = clone(c); Object.assign(x, {thr: [1, 1, 1], q: [...p.q], hw: p.hw, sw: p.sw, opt: {...p.opt}, sel: {}, ts: [], risk: [0, 0, 0]}); return x; }
 
 // Zusammenfassungszeile oben (entspricht Fahrzeugpreis und Leasingrate)
 export function bar(s, delta, fresh, next) {

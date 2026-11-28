@@ -17,13 +17,17 @@ Ordnerinhalt in ein GitHub-Repo legen, Settings > Pages > Branch `main`, Ordner 
 ## Konfigurator (ab 1.6.0)
 Aufbau wie ein Autokonfigurator: links die Schritte (Schnellstart, Einstufung, Spur, Generationsstufe, Bausteine, Zusammenfassung), oben eine Zeile mit Pfad, Gates, Reviews und Liefergegenständen, darunter der Gesamtprozess über die fünf Phasen. Spur, Stufe, Bausteine und Referenzfälle sind Karten; jede Karte zeigt vorab, was sie am Pfad ändert (z. B. „+1 Gate“, „+2 Liefergegenstände“). Nach einer Wahl zeigt die obere Zeile die Änderung, neue Gates, Reviews und Bausteine leuchten im Gesamtprozess kurz auf. Logik in `js/cfg.js`.
 
-## Regeln (ab 1.7.0)
-- **Festschreiben:** Beim ersten Go wird das Regelwerk im Vorhaben gespeichert. Spätere Änderungen an Schwellen oder Liefergegenständen ändern freigegebene Vorhaben nicht (Konfigurationsnachweis).
-- **Regelwerk-Governance:** Nur die Rolle Product Governance ändert das Regelwerk, und zwar als Entwurf. Aktiv wird er erst nach Freigabe durch das PGB (neue Version mit Verlauf).
-- **Freigabe:** Projektleitung beantwortet die Leitfragen, gibt in Spur A/B den Reifegrad HW/SW/System an, der Sponsor bestätigt die Ressourcen. Das MS Gate Committee bewertet die Leitfragen, gibt in Spur A/B je einen Prüfvermerk HW und SW und prüft die Regulatorik (nicht erfüllt = Modify). Offene Punkte führen zu „Go mit offenen Punkten“, dem das PGB ausdrücklich zustimmen muss. Bei Uneinigkeit entscheidet das WP Board.
-- **Änderungen:** Backlog der Spur, nächstes Gate (Systemanforderungen, Hardware, Gate-Termin, Budget bis 50 000 €) oder WP Board (Liefertermin, Budget über 50 000 €). Spurwechsel = Neufreigabe ab G1.
-- **Spur C:** Kennzahlen werden an G2 festgelegt. **G5:** Lessons Learned sind Pflicht und erscheinen bei der Folgegeneration.
-- **Cockpit:** Kill-, Hold- und Modify-Quote, Tage bis zur Entscheidung.
+## Ablauf (ab 1.8.0, nach Fragenkatalog vom 28.11.2026 und Visio PFAD_Prozess_v5)
+- **Ideenpool:** Jeder reicht Ideen ein, bewertet (1 bis 5) und kommentiert. Das PGB stößt Ideen an, eine Projektleitung übernimmt sie und legt daraus ein Vorhaben an.
+- **Konfiguration:** Einstufung, Spur, Teilsystemliste (ab Standard Pflicht), Generationsstufe mit Risiko-Korrektur, Bausteine (je Spur Pflicht, vorgeschlagen oder optional; im Regelwerk pflegbar).
+- **G1:** Die Projektleitung hakt die Nachweise ab, beantwortet die Leitfragen, bestätigt den Sponsor und reicht ein; das PGB entscheidet direkt.
+- **Ab G2:** Das MS Gate Committee (= Projektteam) prüft auf Vollständigkeit, in Spur A und B mit Prüfvermerk HW und SW; das PGB entscheidet. Freigabe nur, wenn alles vorliegt (kein Go mit offenen Punkten). Regulatorik nicht erfüllt: Modify.
+- **Wochensitzung:** Das PGB tagt wöchentlich (Tag unter Mehr einstellbar); die Tagesordnung wird als Text oder CSV exportiert.
+- **Hold** mit Wiedervorlage spätestens nach 3 Monaten, **Kill** mit Abbruchbericht, **WP Board** nur auf Vorlage des PGB.
+- **Änderungen:** Backlog, nächstes Gate oder über das PGB an das WP Board (Liefertermin über 4 Wochen, Budget über 50 000 €); vorgezogene Arbeit mit vertraglicher Bindung entscheidet das PGB.
+- **Nach G5:** Verantwortung im Lebenszyklus, Post-Launch-Review 6 bis 12 Monate später, Folgegeneration.
+- **Festschreiben und Regelwerk:** wie ab 1.7.0 (erstes Go schreibt das Regelwerk fest; Product Governance pflegt, PGB gibt frei).
+- **Konzept:** Nachweise werden abgehakt, nicht hochgeladen; E-Mails werden als mailto vorbereitet; keine Anmeldung.
 
 ## Bedienung am PC
 - Ab 900 px Breite: Navigation als Seitenleiste links, Fenster (Sheets) mittig, Hover-Zustände.
@@ -32,6 +36,6 @@ Aufbau wie ein Autokonfigurator: links die Schritte (Schnellstart, Einstufung, S
 
 ## Grenzen
 - Daten liegen nur im Browser (localStorage). Sicherung über Mehr > Exportieren.
-- Rollen sind ein Umschalter, keine Anmeldung (Projektleitung, MS Gate Committee, PGB, WP Board, Product Governance).
+- Rollen sind ein Umschalter, keine Anmeldung (Projektleitung, MS Gate Committee = Projektteam, PGB, WP Board, Product Governance).
 - Keine Anbindung an den Roadmap Master. Schwellen 20 %/60 %, Max-Regel HW/SW, gleiche Gewichtung angepasster und neuer Teilsysteme, Reifegrad-Skala und die Zuordnung der Liefergegenstände zu Leitfragen sind Annahmen bzw. Vorschläge.
 - Gate-Schema der App (G1 bis G5) weicht vom Renew PEP (G0 bis G8) ab. Die Zuordnung beim CSV-Import (G0 und G1 → G1 usw.) ist eine Annahme und im Regelwerk änderbar.

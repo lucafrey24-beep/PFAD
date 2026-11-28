@@ -8,7 +8,7 @@ const {PRESETS} = await import("../js/data.js");
 const RW = await import("../js/rules.js");
 let fail = 0, n = 0;
 const ok = (cond, msg) => { n++; if (cond) console.log("ok   " + msg); else { fail++; console.log("FEHL " + msg); } };
-const cfg = (q, hw, sw, opt = {}) => ({thr: [1, 1, 1], q, hw, sw, opt, sel: {}, why: {}, ts: []});
+const cfg = (q, hw, sw, opt = {}, risk = [0, 0, 0]) => ({thr: [1, 1, 1], q, hw, sw, opt, sel: {}, why: {}, ts: [], risk});
 
 // Tab. 18: beispielhafte Konfigurationen und daraus folgende Reviews
 const TAB18 = [
@@ -44,6 +44,14 @@ ok(compute(c30, frozen).path === "B-Standard", "Vorher: B mit 30 % ist Standard"
 RW.edit(R => { R.thr.light = 35; }); RW.submitDraft(); RW.approveDraft("Test");
 ok(compute(c30).path === "B-Light", "Neues Regelwerk (Light bis 35 %): neue Vorhaben werden B-Light");
 ok(compute(c30, frozen).path === "B-Standard" && compute(c30, frozen).gates.some(g => g.n === "G1"), "Festgeschrieben: bleibt B-Standard mit getrenntem G1 und G2");
+// Risiko-Korrektur (Ergänzung V2): hebt die Stufe um eine an, nie ab
+ok(compute(cfg([1, 0, 1], 0, 15, {}, [1, 0, 0])).st === "Standard" && compute(cfg([1, 0, 1], 0, 15)).st === "Light", "Risiko-Korrektur: Light wird Standard");
+ok(compute(cfg([1, 1, 1], 70, 70, {}, [0, 1, 1])).st === "Full", "Risiko-Korrektur: Full bleibt Full");
+// Bausteine als Daten: Pflicht nicht abwählbar, nicht verfügbar fällt weg
+RW.edit(R => { R.mods.s5 = {t: "Sprints in den Phasen", d: "Sprint Reviews mit Ergebnis", pf: {A: "p", Bh: "v", B: "v", C: "v"}}; }); RW.submitDraft(); RW.approveDraft("Test");
+const aSel = cfg([1, 1, 1], 70, 40); aSel.sel = {s5: false};
+ok(compute(aSel).on.some(m => m.id === "s5"), "Pflichtbaustein bleibt aktiv, auch wenn abgewählt");
+ok(compute(cfg([0, 1, 1], 0, 40)).ab.length === 0 && compute(Object.assign(cfg([0, 1, 1], 0, 40), {sel: {s6: false}})).ab.some(m => m.id === "s6"), "Vorgeschlagener Baustein abgewählt: Begründung nötig");
 // Regelwerk-Entwurf wirkt erst nach Freigabe
 RW.edit(R => { R.thr.full = 90; });
 ok(RW.rules().thr.full === 60 && RW.draft().thr.full === 90, "Entwurf ist nicht aktiv, bis das PGB freigibt");

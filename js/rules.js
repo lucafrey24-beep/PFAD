@@ -3,7 +3,7 @@
 // Erst die Freigabe macht den Entwurf aktiv (neue Version). Laufende Vorhaben behalten die Version ihres ersten Go.
 // Standardinhalt: Tab. 12 der Studienarbeit (Liefergegenstände je Phase und Spur). Die Product-Governance-CSV
 // (Renew PEP, G0 bis G8) wird nur im Browser importiert und landet im Entwurf.
-import {MODS} from "./data.js";
+import {MODS, PF0} from "./data.js";
 
 const KEY = "pfad-rules", STUFEN = ["Full", "Standard", "Light"], SPUREN = ["A", "B", "C"], PROCS = ["Device", "Digital"];
 export const APP_GATES = ["G1", "G2", "G3", "G4", "G5"];
@@ -36,7 +36,7 @@ const mk = () => ({
   gates: {G0: "Gate 0", G1: "Gate 1", G2: "Gate 2", G3: "Gate 3", G4: "Gate 4", G5: "Gate 5", G6: "Gate 6", G7: "Gate 7", G8: "Gate 8"},
   gateMap: {G1: ["G0", "G1"], G2: ["G2"], G3: ["G3"], G4: ["G4", "G5"], G5: ["G6", "G7", "G8"]}, // Annahme, im Regelwerk änderbar
   items: SEED.map((x, i) => ({id: "i" + (i + 1), gate: x[0], name: x[1], kat: "D", spuren: x[2].split(""), stufen: STUFEN.slice(), src: "Tab. 12", lf: x[3], wv: x[4], zv: !!(x[3] || x[4] !== "")})),
-  mods: {}, seq: SEED.length + 1
+  mods: {}, xmods: [], seq: SEED.length + 1
 });
 const str = (v, n) => String(v ?? "").slice(0, n);
 // Ältere Fassungen: Gate G1 bis G8 (Renew) und Prozess Device/Digital je Liefergegenstand
@@ -60,7 +60,9 @@ function clean(x) {
     });
     const used = new Set(); d.items.forEach(i => { while (used.has(i.id)) i.id += "x"; used.add(i.id); });
   }
-  if (x.mods && typeof x.mods === "object") for (const m of MODS) { const o = x.mods[m.id]; if (o && typeof o === "object") d.mods[m.id] = {t: str(o.t || m.t, 80), d: str(o.d || m.d, 120)}; }
+  const pfc = o => { if (!o || typeof o !== "object") return null; const r = {}; for (const k of ["A", "Bh", "B", "C"]) r[k] = ["p", "v", "o", "-"].includes(o[k]) ? o[k] : "-"; return r; };
+  if (x.mods && typeof x.mods === "object") for (const m of MODS) { const o = x.mods[m.id]; if (o && typeof o === "object") { d.mods[m.id] = {t: str(o.t || m.t, 80), d: str(o.d || m.d, 120)}; const pf = pfc(o.pf); if (pf && m.ty !== "stufe") d.mods[m.id].pf = pf; } }
+  if (Array.isArray(x.xmods)) d.xmods = x.xmods.slice(0, 30).filter(m => m && /^x\d{1,4}$/.test(m.id || "") && String(m.t || "").trim()).map(m => ({id: m.id, t: str(m.t, 80), d: str(m.d || "", 120), ph: Number.isInteger(m.ph) && m.ph >= 0 && m.ph <= 4 ? m.ph : 2, ty: "spur", ...(m.rv && String(m.rv.n || "").trim() ? {rv: {n: str(m.rv.n, 40), p: .6}} : {}), pf: pfc(m.pf) || {A: "o", Bh: "o", B: "o", C: "o"}}));
   d.seq = d.items.length + 1000;
   if (x.pending && typeof x.pending === "object") d.pending = {at: str(x.pending.at, 10)};
   if (typeof x.rej === "string") d.rej = str(x.rej, 400);
@@ -101,7 +103,9 @@ export function restoreActive(x) { if (!x || typeof x !== "object") return; R = 
 // Kopie für ein Vorhaben (ohne Quellzeilen, damit der Speicher klein bleibt)
 export function freeze() { const x = copy(R); x.items.forEach(i => delete i.quellen); delete x.pending; delete x.rej; delete x.hist; return x; }
 export const asRules = x => x && typeof x === "object" && x.thr ? x : R;
-export const mods = (rr = R) => MODS.map(m => rr.mods && rr.mods[m.id] ? {...m, t: rr.mods[m.id].t, d: rr.mods[m.id].d} : m);
+// Bausteine mit Texten und Verfügbarkeit je Spur aus dem Regelwerk, dazu eigene Bausteine von Product Governance
+export const mods = (rr = R) => MODS.map(m => { const o = rr.mods && rr.mods[m.id]; return {...m, ...(o ? {t: o.t, d: o.d} : {}), pf: (o && o.pf) || PF0[m.id] || null}; }).concat((rr.xmods || []).map(m => ({...m, x: true})));
+export function addMod(t, ph, rvName) { let nid = ""; edit(X => { X.xmods = X.xmods || []; let n = 1; while (X.xmods.some(m => m.id === "x" + n)) n++; nid = "x" + n; X.xmods.push({id: nid, t: t || "Neuer Baustein", d: "Liefergegenstand", ph, ty: "spur", ...(rvName ? {rv: {n: rvName, p: .6}} : {}), pf: {A: "o", Bh: "o", B: "o", C: "o"}}); }); return nid; }
 export function addItem(gate) { let nid = ""; edit(X => { nid = "n" + (X.seq++); X.items.push({id: nid, gate, name: "Neuer Liefergegenstand", kat: "D", spuren: SPUREN.slice(), stufen: STUFEN.slice(), src: "eigene", lf: "", wv: "", zv: false}); }); return nid; }
 // Regel aus Kap. 5.5: jeder Liefergegenstand beantwortet eine Leitfrage oder wird später weiterverwendet
 export const purposeMissing = i => !i.lf && i.wv === "";
@@ -128,7 +132,8 @@ export function diffDraft() {
   if (chg.length) out.push(chg.length + " Liefergegenstände geändert");
   if (JSON.stringify(R.gateMap) !== JSON.stringify(D.gateMap)) out.push("Zuordnung Renew-Gates geändert");
   if (JSON.stringify(R.imp) !== JSON.stringify(D.imp)) out.push("Import-Zuordnung Prozess → Spuren geändert");
-  if (JSON.stringify(R.mods) !== JSON.stringify(D.mods)) out.push("Bausteintexte geändert");
+  if (JSON.stringify(R.mods) !== JSON.stringify(D.mods)) out.push("Bausteine geändert (Texte oder Pflicht/Option)");
+  if (JSON.stringify(R.xmods || []) !== JSON.stringify(D.xmods || [])) out.push("Eigene Bausteine geändert: " + (D.xmods || []).length);
   if (JSON.stringify(R.gates) !== JSON.stringify(D.gates)) out.push("Gate-Namen geändert");
   const zw = D.items.filter(purposeMissing).length; if (zw) out.push(zw + " Liefergegenstände ohne Leitfrage oder Folgephase (Regel Kap. 5.5)");
   return out.length ? out : ["Keine inhaltliche Änderung"];

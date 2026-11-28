@@ -15,6 +15,16 @@ export const MODS = [
   {id: "o1", t: "Kundenpilot / Beta", ph: 3, ty: "opt", ln: "G", rv: {n: "Pilotfreigabe", p: .28, r: 3}, d: "Pilotbericht mit Feedback"},
   {id: "o3", t: "Markteinführung SoC / SoS / SoD", ph: 4, ty: "opt", ln: "G", d: "Termine Start of Communication, Sales, Delivery"}
 ];
+// Verfügbarkeit je Spur (Bh = Spur B mit Hardware): p Pflicht, v vorgeschlagen (Abwahl mit Begründung), o optional, - nicht verfügbar.
+// Product Governance kann das im Regelwerk ändern, das PGB gibt frei. Standard nach Bausteinpool der Studienarbeit.
+export const PF0 = {
+  s1: {A: "v", Bh: "v", B: "-", C: "-"}, s2: {A: "v", Bh: "v", B: "v", C: "-"}, s3: {A: "v", Bh: "v", B: "-", C: "-"}, s4: {A: "v", Bh: "-", B: "-", C: "-"},
+  s5: {A: "o", Bh: "v", B: "v", C: "v"}, s6: {A: "v", Bh: "v", B: "v", C: "v"}, o1: {A: "o", Bh: "o", B: "o", C: "o"}, o3: {A: "o", Bh: "o", B: "o", C: "o"}
+};
+export const PFK = {p: "Pflicht", v: "vorgeschlagen", o: "optional", "-": "nicht verfügbar"};
+export const SPK = [["A", "Spur A"], ["Bh", "Spur B mit HW"], ["B", "Spur B ohne HW"], ["C", "Spur C"]];
+// Risiko-Korrektur der Generationsstufe (Ergänzung V2): jede Ja-Antwort hebt die Stufe um eine an, nie ab
+export const RISK = ["Neue Zulassung oder Norm nötig", "Neue Technologie für HGS", "Externer Entwicklungspartner"];
 export const SPN = {A: "Device with Software", B: "Software on Device", C: "Software & Data"};
 export const SPDESC = {
   A: "Hardware führt. Muster, Design Freeze, Zulassung und Serienanlauf werden vorgeschlagen.",
@@ -26,7 +36,7 @@ export const STATUS = {
   on: ["On Track", "s-on"], off: ["Off Track", "s-off"], bl: ["Blockiert", "s-bl"], pe: ["Freigabe offen", "s-pe"],
   li: ["ohne PEP", "s-li"], re: ["Zurück an PL", "s-re"], ho: ["Hold", "s-re"], ki: ["Abgebrochen (Kill)", "s-re"], do: ["Abgeschlossen", "s-on"]
 };
-export const ROLES = {PL: "Projektleitung", MS: "MS Gate Committee", PPB: "PGB", WP: "WP Board", PG: "Product Governance"};
+export const ROLES = {PL: "Projektleitung", MS: "MS Gate Committee (Projektteam)", PPB: "PGB", WP: "WP Board", PG: "Product Governance"};
 // Leitfragen je Gate: vor dem Gate bekannte Freigabekriterien (Studienarbeit Kap. 5.6, Tab. 15)
 export const LF = {
   G1: ["Passt das Vorhaben zur Strategie?", "Sind Spur und Konfiguration richtig gewählt?", "Reichen die Ressourcen für die Konzeptphase?"],
@@ -42,9 +52,11 @@ export const CRK = {
   sys: {t: "Gemeinsame Systemanforderungen", to: "gate"},
   hw: {t: "Festgelegte Hardware (ab Design Freeze)", to: "gate"},
   gate: {t: "Termin eines Gates", to: "gate"},
-  lt: {t: "Wesentliche Änderung des Liefertermins", to: "wp"},
-  budget: {t: "Budgetänderung", to: "gate"}
+  lt: {t: "Änderung des Liefertermins", to: "gate"},
+  budget: {t: "Budgetänderung", to: "gate"},
+  pre: {t: "Vorgezogene Arbeit mit vertraglicher Bindung", to: "pgb"}
 };
+export const LT_WEEKS = 4; // Verschiebung des Liefertermins um mehr als 4 Wochen = wesentlich, Vorlage an das WP Board
 export const WP_LIMIT = 50000; // Budgetänderungen darüber entscheidet das WP Board
 export const RG = ["nicht erreicht", "teilweise", "erreicht"]; // Reifegrad gegenüber dem Ziel der Phase (Annahme)
 export const TSS = {u: "übernommen", a: "angepasst", n: "neu"}; // Teilsystemstatus nach Variationsart

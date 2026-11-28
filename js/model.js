@@ -14,20 +14,20 @@ export function compute(c, rr0) {
   const sp = !c.q[0] ? "C" : (!c.q[1] ? "B" : (c.q[2] ? "A" : "B"));
   const hc = !!(c.q[0] && c.q[1]);
   const v = hc ? Math.max(sh.hw, sh.sw) : sh.sw; // Annahme: bei Hardwareänderung zählt der höhere Anteil
-  const st = v >= TH.full ? "Full" : v <= TH.light ? "Light" : "Standard";
-  const avail = m => {
-    if (m.id === "r1") return st !== "Full";
-    if (m.id === "s2") return sp === "A" || sp === "B"; // Abgleichpunkte in Spur A und B (Bausteinpool)
-    if (["s1", "s3"].includes(m.id)) return sp === "A" || (sp === "B" && hc);
-    if (m.id === "s4") return sp === "A";
-    return true;
-  };
-  const defOn = m => m.ty !== "spur" ? false : (m.id === "s5" ? sp !== "A" : avail(m));
+  const st0 = v >= TH.full ? "Full" : v <= TH.light ? "Light" : "Standard";
+  const risk = Array.isArray(c.risk) && c.risk.some(Boolean); // Risiko-Korrektur: eine Stufe höher, nie niedriger
+  const st = risk ? (st0 === "Light" ? "Standard" : "Full") : st0;
+  const key = sp === "B" ? (hc ? "Bh" : "B") : sp;
+  // Wirksamer Typ eines Bausteins in dieser Spur: stufe, pflicht, spur (vorgeschlagen), opt oder na
+  const ty = m => m.ty === "stufe" ? "stufe" : ({p: "pflicht", v: "spur", o: "opt"}[(m.pf && m.pf[key]) || "-"] || "na");
+  const avail = m => m.ty === "stufe" ? st !== "Full" : ty(m) !== "na";
+  const defOn = m => ["pflicht", "spur"].includes(ty(m));
   const isOn = m => {
     if (!avail(m)) return false;
-    if (m.ty === "stufe") return true;
-    if (m.ty === "spur") return (c.sel && c.sel[m.id] !== undefined) ? c.sel[m.id] : defOn(m);
-    return !!(c.opt && c.opt[m.id]);
+    const t = ty(m), sel = c.sel && c.sel[m.id] !== undefined ? !!c.sel[m.id] : undefined;
+    if (t === "stufe" || t === "pflicht") return true;
+    if (t === "spur") return sel !== undefined ? sel : true;
+    return sel !== undefined ? sel : !!(c.opt && c.opt[m.id]);
   };
   const light = st === "Light";
   const gates = [];
@@ -36,10 +36,10 @@ export function compute(c, rr0) {
   if ((sp === "A" && !light) || (sp === "B" && st === "Full")) gates.push({n: "G3", t: "Entwicklungsreview", x: 3});
   gates.push({n: "G4", t: "Produktfreigabe", x: 4}, {n: "G5", t: "Projektabschluss", x: 5});
   const on = MODS.filter(isOn);
-  const ab = MODS.filter(m => m.ty === "spur" && avail(m) && defOn(m) && !isOn(m));
+  const ab = MODS.filter(m => ty(m) === "spur" && !isOn(m));
   const rv = on.filter(m => m.rv).map(m => ({n: m.rv.n, t: m.t, x: m.ph + m.rv.p, r: m.rv.r, rv: 1, mid: m.id}));
   const order = [...gates, ...rv].sort((a, b) => a.x - b.x);
-  return {ok, sp, hc, st, sh, light, avail, defOn, isOn, gates, rv, order, on, ab, rr, ver: rr.ver, n: ok ? order.length : 0, path: ok ? sp + "-" + st : "ohne PEP"};
+  return {ok, sp, hc, st, st0, risk, key, ty, sh, light, avail, defOn, isOn, gates, rv, order, on, ab, rr, ver: rr.ver, n: ok ? order.length : 0, path: ok ? sp + "-" + st : "ohne PEP"};
 }
 export const phaseOf = o => Math.min(4, Math.max(0, Math.ceil(o.x) - 1));
 
